@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0e11;
+  --bg-card: #18181c;
+  --bg-hover: #1f1f25;
+  --bg-surface: #232329;
+  --text: #e4e4e7;
+  --text-dim: #8b8b96;
+  --text-faint: #55555e;
+  --border: #2a2a32;
+  --accent: #6d5cff;
+  --accent-dim: rgba(109,92,255,0.12);
+  --urgent: #f04438;
+  --urgent-bg: rgba(240,68,56,0.08);
+  --radius: 10px;
+  --font: 'DM Sans', -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font); line-height: 1.5;
+  min-height: 100vh; -webkit-font-smoothing: antialiased;
+}
+::selection { background: var(--accent); color: #fff; }
+.container { max-width: 720px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+header { margin-bottom: 2rem; }
+header h1 {
+  font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #e4e4e7 0%, #8b8b96 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  margin-bottom: 1.25rem;
+}
+.stat {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.stat-label { font-size: 0.7rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.07em; font-family: var(--mono); }
+.stat-val { font-size: 1.5rem; font-weight: 600; margin-top: 4px; }
+.stat-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+.stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+.stat-scope { font-size: 0.6rem; color: var(--text-faint); margin-top: 6px; font-family: var(--mono); }
+
+/* === toolbar (archive + display mode toggles) === */
+.toolbar {
+  display: flex; gap: 8px; align-items: center;
+  justify-content: flex-end; flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.toolbar-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 0.7rem;
+  padding: 5px 12px; border-radius: 20px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+}
+.toolbar-btn:hover { border-color: var(--text-faint); color: var(--text); }
+.toolbar-btn .tb-icon { font-size: 0.85rem; line-height: 1; }
+.toolbar-btn.archive.active {
+  background: var(--urgent-bg);
+  border-color: rgba(240,68,56,0.4);
+  color: var(--urgent);
+}
+
+/* === filters === */
+.filters {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 1rem;
+  position: sticky; top: 0; z-index: 10;
+  background: var(--bg); padding: 0.75rem 0;
+}
+.filter-btn {
+  font-family: var(--mono); font-size: 0.72rem; padding: 6px 14px;
+  border-radius: 20px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-dim);
+  cursor: pointer; transition: all 0.2s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.filter-btn:hover { border-color: var(--text-faint); color: var(--text); }
+.filter-btn.active { background: var(--accent-dim); border-color: var(--accent); color: #c4b5fd; }
+.filter-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.filter-btn.add-cat-btn { border-style: dashed; color: var(--text-faint); }
+.filter-btn.add-cat-btn:hover { color: var(--text-dim); }
+
+/* === category edit mode === */
+.filter-btn.cat-editing {
+  border-style: dashed;
+  cursor: default;
+  animation: catBreathe 1.4s ease-in-out infinite;
+}
+@keyframes catBreathe {
+  0%, 100% { border-color: var(--border); }
+  50%      { border-color: var(--text-dim); }
+}
+.cat-name {
+  cursor: text; padding: 1px 3px; border-radius: 4px;
+  transition: background 0.15s;
+}
+.cat-name:hover { background: var(--bg-surface); }
+.cat-rename-input {
+  background: var(--bg-surface); border: 1px solid var(--accent);
+  border-radius: 4px; color: var(--text);
+  font-family: inherit; font-size: inherit;
+  outline: none; padding: 2px 6px; width: 7em;
+  min-width: 4em;
+}
+.cat-del {
+  background: none; border: none; color: var(--text-faint);
+  cursor: pointer; padding: 0 4px; margin-left: 2px;
+  font-size: 1rem; line-height: 1; transition: color 0.15s;
+}
+.cat-del:hover { color: var(--urgent); }
+.cat-edit-toggle {
+  font-family: var(--mono); font-size: 0.72rem; padding: 6px 12px;
+  border-radius: 20px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-faint);
+  cursor: pointer; transition: all 0.2s;
+}
+.cat-edit-toggle:hover { color: var(--text-dim); border-color: var(--text-faint); }
+.cat-edit-toggle.active { color: #c4b5fd; border-color: var(--accent); background: var(--accent-dim); }
+
+/* === add bar === */
+.add-bar {
+  display: flex; gap: 8px; margin-bottom: 1.75rem; flex-wrap: wrap;
+  align-items: stretch;
+}
+.add-bar input[type="text"], .add-bar select {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px;
+  color: var(--text); font-family: var(--font); font-size: 0.85rem;
+  outline: none; transition: border-color 0.2s;
+}
+.add-bar input[type="text"]:focus, .add-bar select:focus { border-color: var(--accent); }
+.add-bar input[type="text"] { flex: 1; min-width: 180px; }
+.add-bar input[type="text"]::placeholder { color: var(--text-faint); }
+.add-bar select { min-width: 130px; cursor: pointer; }
+.add-bar select option { background: var(--bg-card); }
+.add-btn {
+  background: var(--accent); border: none; border-radius: var(--radius);
+  color: #fff; font-family: var(--mono); font-size: 0.78rem; font-weight: 500;
+  padding: 10px 20px; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.add-btn:hover { opacity: 0.85; }
+.add-btn:active { transform: scale(0.97); }
+
+/* === date picker (replaces text deadline input) === */
+.date-picker {
+  position: relative; display: flex; align-items: center;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px;
+  color: var(--text); font-family: var(--font); font-size: 0.85rem;
+  cursor: pointer; transition: border-color 0.2s;
+  min-width: 140px; max-width: 200px;
+}
+.date-picker:hover { border-color: var(--text-faint); }
+.date-picker:focus-within { border-color: var(--accent); }
+.date-picker .date-display {
+  flex: 1; pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.date-picker .date-display.empty { color: var(--text-faint); }
+.date-picker .date-cal-icon {
+  width: 14px; height: 14px; opacity: 0.5; flex-shrink: 0;
+  margin-left: 6px; pointer-events: none;
+}
+.date-picker .date-native {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+  border: none; background: transparent;
+  padding: 0; margin: 0;
+  color-scheme: dark;
+  font-family: inherit; font-size: inherit;
+}
+.date-picker .date-native::-webkit-calendar-picker-indicator {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  cursor: pointer; opacity: 0; color: transparent; background: transparent;
+}
+
+/* === task list === */
+.month-group { margin-bottom: 2rem; }
+.month-header {
+  font-family: var(--mono); font-size: 0.7rem; font-weight: 500;
+  color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 0 4px 8px; border-bottom: 1px solid var(--border);
+  margin-bottom: 8px; display: flex; justify-content: space-between;
+}
+.task {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 40px 12px 14px; border-radius: var(--radius);
+  border: 1px solid transparent; cursor: pointer;
+  transition: all 0.15s; margin-bottom: 2px; position: relative;
+}
+.task:hover { background: var(--bg-hover); }
+.task.urgent { border-left: 3px solid var(--urgent); background: var(--urgent-bg); }
+.task.done { opacity: 0.35; }
+.task.done .task-text { text-decoration: line-through; text-decoration-color: var(--text-faint); }
+.task.editing {
+  background: var(--bg-hover); cursor: default;
+  padding: 14px;
+}
+.task.editing:hover { background: var(--bg-hover); }
+.checkbox {
+  width: 20px; height: 20px; border-radius: 5px;
+  border: 1.5px solid var(--border); flex-shrink: 0; margin-top: 1px;
+  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+}
+.task.done .checkbox { background: var(--accent); border-color: var(--accent); }
+.checkbox svg { opacity: 0; transition: opacity 0.15s; }
+.task.done .checkbox svg { opacity: 1; }
+.task-body { flex: 1; min-width: 0; }
+.task-text { font-size: 0.88rem; color: var(--text); line-height: 1.45; }
+.task-row { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.tag {
+  font-family: var(--mono); font-size: 0.62rem; font-weight: 500;
+  padding: 2px 8px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.tag-urgent { background: var(--urgent-bg); color: var(--urgent); border: 1px solid rgba(240,68,56,0.25); }
+.deadline {
+  font-family: var(--mono); font-size: 0.68rem; color: var(--text-faint);
+  margin-left: auto; padding-left: 12px; white-space: nowrap; flex-shrink: 0;
+}
+.deadline.overdue-label {
+  color: var(--urgent); font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+
+/* always-visible task edit trigger (dimmed pencil) */
+.task-edit-trigger {
+  position: absolute; top: 50%; right: 10px;
+  transform: translateY(-50%);
+  background: none; border: none; color: var(--text-faint);
+  cursor: pointer; font-size: 0.95rem; opacity: 0.35;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  padding: 4px 6px; border-radius: 4px; line-height: 1;
+}
+.task:hover .task-edit-trigger { opacity: 0.7; }
+.task-edit-trigger:hover { opacity: 1; color: var(--text); background: var(--bg-surface); }
+
+/* === archive section === */
+.archive-section {
+  margin-top: 2.25rem;
+  animation: fadeSection 0.2s ease-out;
+}
+@keyframes fadeSection {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.archive-header {
+  font-family: var(--mono); font-size: 0.7rem; font-weight: 500;
+  color: var(--urgent); text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 0 4px 8px; border-bottom: 1px solid rgba(240,68,56,0.2);
+  margin-bottom: 8px; display: flex; justify-content: space-between;
+}
+.task.archived { opacity: 0.5; transition: opacity 0.15s; }
+.task.archived:hover { opacity: 0.85; }
+
+/* === inline task edit form === */
+.task-edit-form {
+  width: 100%; display: flex; flex-direction: column; gap: 10px;
+  animation: editFadeIn 0.18s ease-out;
+}
+@keyframes editFadeIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.edit-field {
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; color: var(--text);
+  font-family: var(--font); font-size: 0.85rem; outline: none;
+  transition: border-color 0.15s;
+}
+.edit-field:focus { border-color: var(--accent); }
+.edit-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.edit-row > .edit-field, .edit-row > .date-picker { flex: 1; min-width: 110px; max-width: none; }
+select.edit-field { cursor: pointer; }
+.task-edit-form .date-picker {
+  background: var(--bg-surface);
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+  min-width: 110px;
+}
+.edit-urgent {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 0.74rem; color: var(--text-dim);
+  cursor: pointer; user-select: none;
+}
+.edit-urgent input {
+  width: 16px; height: 16px; accent-color: var(--urgent); cursor: pointer;
+}
+.edit-actions { display: flex; gap: 8px; margin-top: 4px; }
+.btn-edit-save, .btn-edit-delete {
+  padding: 8px 18px; border-radius: 6px; font-family: var(--mono);
+  font-size: 0.75rem; cursor: pointer; transition: all 0.15s; border: none;
+  font-weight: 500;
+}
+.btn-edit-save { background: var(--accent); color: #fff; }
+.btn-edit-save:hover { opacity: 0.85; }
+.btn-edit-delete {
+  background: transparent; color: var(--urgent);
+  border: 1px solid rgba(240,68,56,0.35);
+}
+.btn-edit-delete:hover { background: var(--urgent-bg); border-color: var(--urgent); }
+
+/* === modal === */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; backdrop-filter: blur(4px);
+  animation: fadeSection 0.15s ease-out;
+}
+.modal {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 1.5rem; width: 90%; max-width: 380px;
+}
+.modal h3 { font-size: 1rem; font-weight: 500; margin-bottom: 1rem; }
+.modal label { font-size: 0.78rem; color: var(--text-dim); display: block; margin-bottom: 4px; font-family: var(--mono); }
+.modal input[type="text"] {
+  width: 100%; background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; color: var(--text);
+  font-family: var(--font); font-size: 0.88rem; outline: none;
+  margin-bottom: 1rem;
+}
+.modal input[type="text"]:focus { border-color: var(--accent); }
+.color-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+  margin-bottom: 1.25rem;
+}
+.color-swatch {
+  width: 100%; aspect-ratio: 1; border-radius: 8px; cursor: pointer;
+  border: 2px solid transparent; transition: all 0.15s;
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.selected { border-color: #fff; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px currentColor; }
+.modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-btns button {
+  padding: 8px 18px; border-radius: 8px; font-family: var(--mono);
+  font-size: 0.78rem; cursor: pointer; transition: all 0.15s; border: none;
+}
+.modal-btns .cancel { background: var(--bg-surface); color: var(--text-dim); }
+.modal-btns .cancel:hover { color: var(--text); }
+.modal-btns .confirm { background: var(--accent); color: #fff; }
+.modal-btns .confirm:hover { opacity: 0.85; }
+
+.bottom-actions { display: flex; gap: 10px; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
+.action-btn {
+  padding: 8px 20px; font-family: var(--mono); font-size: 0.72rem;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-faint); border-radius: 20px; cursor: pointer; transition: all 0.2s;
+}
+.action-btn:hover { border-color: var(--text-dim); color: var(--text-dim); }
+.action-btn.danger:hover { border-color: var(--urgent); color: var(--urgent); }
+
+.empty-state {
+  text-align: center; padding: 3rem 0; color: var(--text-faint);
+  font-family: var(--mono); font-size: 0.82rem;
+}
+
+@media (max-width: 600px) {
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .container { padding: 1.25rem 1rem 3rem; }
+  header h1 { font-size: 1.35rem; }
+  .add-bar { flex-direction: column; }
+  .add-bar input[type="text"] { min-width: unset; }
+  .add-bar .date-picker, .add-bar select { max-width: none; }
+  .task { padding-right: 36px; }
+}
+@media (max-width: 380px) {
+  .filter-btn, .cat-edit-toggle { font-size: 0.68rem; padding: 5px 10px; }
+  .toolbar-btn { font-size: 0.66rem; padding: 4px 9px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Task Tracker</h1>
+  </header>
+  <div class="stats" id="stats"></div>
+  <div class="toolbar" id="toolbar"></div>
+  <div class="filters" id="filters"></div>
+  <div class="add-bar">
+    <input type="text" id="newText" placeholder="Новая задача..." onkeydown="if(event.key==='Enter')addTask()">
+    <div class="date-picker" id="newDeadlineWrap">
+      <span class="date-display empty" id="newDeadlineDisp">Дедлайн</span>
+      <svg class="date-cal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <input type="date" class="date-native" id="newDeadlineNative" onchange="onAddDateChange()">
+    </div>
+    <select id="newTag" onmousedown="this.dataset.prev=this.value" onchange="onAddTagChange()"></select>
+    <button class="add-btn" onclick="addTask()">+ Добавить</button>
+  </div>
+  <div id="tasks"></div>
+  <div id="modal-root"></div>
+  <div class="bottom-actions">
+    <button class="action-btn danger" onclick="resetProgress()">Сбросить прогресс</button>
+    <button class="action-btn danger" onclick="resetAll()">Сбросить всё</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// STORAGE — abstraction over localStorage
+// UI never touches localStorage directly. To migrate to a server
+// API later, only this object needs to change.
+// ============================================================
+const Storage = (() => {
+  const KEYS = {
+    checked:     'mp_checked',
+    tasks:       'mp_tasks',
+    deleted:     'mp_deleted',
+    overrides:   'mp_edits',
+    cats:        'mp_categories',
+    display:     'mp_display_mode',
+    showArchive: 'mp_show_archive',
+  };
+  function readJSON(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null) return fallback;
+      const v = JSON.parse(raw);
+      return v == null ? fallback : v;
+    } catch (e) { return fallback; }
+  }
+  function writeJSON(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
+  return {
+    getChecked()              { return readJSON(KEYS.checked, {}); },
+    saveChecked(v)            { writeJSON(KEYS.checked, v); },
+    getTasks()                { return readJSON(KEYS.tasks, []); },
+    saveTasks(v)              { writeJSON(KEYS.tasks, v); },
+    getDeletedDefaults()      { return readJSON(KEYS.deleted, {}); },
+    saveDeletedDefaults(v)    { writeJSON(KEYS.deleted, v); },
+    getDefaultOverrides()     { return readJSON(KEYS.overrides, {}); },
+    saveDefaultOverrides(v)   { writeJSON(KEYS.overrides, v); },
+    getCategories()           { return readJSON(KEYS.cats, null); },
+    saveCategories(v)         { writeJSON(KEYS.cats, v); },
+    getDisplayMode()          { return readJSON(KEYS.display, 'date'); },
+    saveDisplayMode(v)        { writeJSON(KEYS.display, v); },
+    getShowArchive()          { return readJSON(KEYS.showArchive, false); },
+    saveShowArchive(v)        { writeJSON(KEYS.showArchive, v); },
+  };
+})();
+
+// ============================================================
+// CONSTANTS — palette, default categories, default tasks
+// ============================================================
+const COLOR_PALETTE = [
+  { id:'blue',   hex:'#2e90fa', bg:'rgba(46,144,250,0.1)',  border:'rgba(46,144,250,0.25)' },
+  { id:'green',  hex:'#12b76a', bg:'rgba(18,183,106,0.1)',  border:'rgba(18,183,106,0.25)' },
+  { id:'amber',  hex:'#f79009', bg:'rgba(247,144,9,0.1)',   border:'rgba(247,144,9,0.25)' },
+  { id:'purple', hex:'#a78bfa', bg:'rgba(167,139,250,0.1)', border:'rgba(167,139,250,0.25)' },
+  { id:'coral',  hex:'#f97066', bg:'rgba(249,112,102,0.1)', border:'rgba(249,112,102,0.25)' },
+  { id:'teal',   hex:'#2dd4bf', bg:'rgba(45,212,191,0.1)',  border:'rgba(45,212,191,0.25)' },
+  { id:'pink',   hex:'#ec4899', bg:'rgba(236,72,153,0.1)',  border:'rgba(236,72,153,0.25)' },
+  { id:'lime',   hex:'#84cc16', bg:'rgba(132,204,22,0.1)',  border:'rgba(132,204,22,0.25)' },
+  { id:'sky',    hex:'#38bdf8', bg:'rgba(56,189,248,0.1)',  border:'rgba(56,189,248,0.25)' },
+  { id:'rose',   hex:'#fb7185', bg:'rgba(251,113,133,0.1)', border:'rgba(251,113,133,0.25)' },
+];
+
+const DEFAULT_CATEGORIES = {
+  visa:    { label:'Виза',     colorId:'blue' },
+  exam:    { label:'Экзамены', colorId:'green' },
+  diploma: { label:'Диплом',   colorId:'amber' },
+  uni:     { label:'Германия', colorId:'purple' },
+};
+
+// Default seed tasks. `manualUrgent` is preserved; auto-urgent
+// is computed at render time from the deadline. `month` is no
+// longer stored — months are derived dynamically from deadlines.
+const DEFAULT_TASKS = [
+  { id:1,  text:'Снять копии со всех документов на визу', tag:'visa', deadline:'31 мая', manualUrgent:true },
+  { id:2,  text:'Найти контору/юриста для помощи с визой', tag:'visa', deadline:'2 июня', manualUrgent:true },
+  { id:3,  text:'Узнать статус Verpflichtungserklärung (инфо 2 июня)', tag:'visa', deadline:'2 июня', manualUrgent:true },
+  { id:4,  text:'Собрать ВКР из трёх отчётов по практике', tag:'diploma', deadline:'6 июня', manualUrgent:true },
+  { id:5,  text:'Скачать учебники для экзаменов (ЭБС Юрайт / АТиСО)', tag:'exam', deadline:'5 июня' },
+  { id:6,  text:'Заполнить анкету на визу C (Almaviva) + записаться на приём', tag:'visa', deadline:'10 июня' },
+  { id:7,  text:'Оформить страховку (AXA / Europ Assistance)', tag:'visa', deadline:'10 июня' },
+  { id:8,  text:'Сделать 2 фото 35×45 на белом фоне', tag:'visa', deadline:'10 июня' },
+  { id:9,  text:'Запросить у папы выписку из грузинского банка (3 мес.)', tag:'visa', deadline:'10 июня' },
+  { id:10, text:'Подготовить блок: Корпоративные финансы', tag:'exam', deadline:'10 июня' },
+  { id:11, text:'Подать документы на поступление в СевГУ', tag:'exam', deadline:'20 июня' },
+  { id:12, text:'Подготовить блок: Финансовая диагностика', tag:'exam', deadline:'20 июня' },
+  { id:13, text:'Защита диплома бакалавра', tag:'diploma', deadline:'26 июня' },
+  { id:14, text:'Подготовить блок: Бюджетная система РФ', tag:'exam', deadline:'30 июня' },
+  { id:15, text:'Поехать в Москву — подать документы в Almaviva + биометрия', tag:'visa', deadline:'конец июня' },
+  { id:16, text:'Подготовить блок: Налоговая система', tag:'exam', deadline:'10 июля' },
+  { id:17, text:'Подготовить блок: Банковское дело', tag:'exam', deadline:'20 июля' },
+  { id:18, text:'Подготовить блок: Инвестирование', tag:'exam', deadline:'31 июля' },
+  { id:19, text:'Вступительные экзамены в СевГУ', tag:'exam', deadline:'июль–август' },
+  { id:20, text:'Повторение: прогон 6 дисциплин + пробные тесты', tag:'exam', deadline:'1–10 августа' },
+  { id:21, text:'Получить визу, забрать паспорт', tag:'visa', deadline:'июль–август' },
+  { id:22, text:'Поездка в Германию (транзит через Турцию/Сербию → Италия → Хайльбронн)', tag:'visa', deadline:'лето' },
+  { id:23, text:'Поступление на «Финансы и Кредит» в СевГУ', tag:'exam', deadline:'сентябрь' },
+  { id:24, text:'Начать интенсивную подготовку к IELTS', tag:'uni', deadline:'сентябрь' },
+  { id:25, text:'Начать собирать документы для немецких вузов', tag:'uni', deadline:'октябрь–ноябрь' },
+  { id:26, text:'Сдать IELTS (цель 5.5+)', tag:'uni', deadline:'декабрь' },
+];
+
+const RU_MONTH_NAMES     = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const RU_MONTH_GENITIVE  = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const NO_DATE_LABEL      = 'Без даты';
+const NEW_CAT_SENTINEL   = '__new_cat__';
+
+// ============================================================
+// STATE
+// ============================================================
+let checked = {};
+let customTasks = [];
+let deletedDefaults = {};
+let defaultOverrides = {};
+let categories = {};
+let displayMode = 'date';
+let showArchive = false;
+let filter = 'all';
+let editingTaskId = null;
+let categoryEditMode = false;
+let editingCategoryKey = null;
+let nextId = 1000;
+let catModalSuccessCb = null;
+
+// ============================================================
+// LOAD & SAVE (via Storage)
+// ============================================================
+function loadAllData() {
+  checked          = Storage.getChecked();
+  customTasks      = Storage.getTasks();
+  deletedDefaults  = Storage.getDeletedDefaults();
+  defaultOverrides = Storage.getDefaultOverrides();
+  categories       = Storage.getCategories();
+  displayMode      = Storage.getDisplayMode();
+  showArchive      = Storage.getShowArchive();
+
+  // Migrate legacy text-only overrides (string -> {text})
+  for (const [id, val] of Object.entries(defaultOverrides)) {
+    if (typeof val === 'string') defaultOverrides[id] = { text: val };
+  }
+  // Migrate legacy `urgent` -> `manualUrgent` on custom tasks
+  customTasks.forEach(t => {
+    if (t.urgent !== undefined && t.manualUrgent === undefined) t.manualUrgent = t.urgent;
+    delete t.urgent;
+    // Drop legacy stored `month` — it's derived now
+    delete t.month;
+  });
+  if (!categories || !Object.keys(categories).length) {
+    categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+  }
+  if (displayMode !== 'date' && displayMode !== 'countdown') displayMode = 'date';
+  if (customTasks.length) nextId = Math.max(...customTasks.map(t => t.id), 999) + 1;
+}
+
+function saveAllData() {
+  Storage.saveChecked(checked);
+  Storage.saveTasks(customTasks);
+  Storage.saveDeletedDefaults(deletedDefaults);
+  Storage.saveDefaultOverrides(defaultOverrides);
+  Storage.saveCategories(categories);
+  Storage.saveDisplayMode(displayMode);
+  Storage.saveShowArchive(showArchive);
+}
+
+// ============================================================
+// DATE PARSING & FORMATTING
+// ============================================================
+const RU_MONTH_PREFIXES = [
+  ['январ', 1], ['феврал', 2], ['март',  3], ['апрел', 4],
+  ['ма',    5], ['июн',    6], ['июл',   7], ['август',8],
+  ['сентябр',9],['октябр',10], ['ноябр',11], ['декабр',12],
+];
+
+// Strict "DD месяц". Vague forms ("конец июня", "лето", ranges, "—") return null.
+function parseRussianDate(s) {
+  if (!s) return null;
+  const str = String(s).toLowerCase().trim();
+  const m = str.match(/^(\d{1,2})\s+([а-яё]+)$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  if (day < 1 || day > 31) return null;
+  const word = m[2];
+  let month = null;
+  for (const [prefix, num] of RU_MONTH_PREFIXES) {
+    if (word.startsWith(prefix)) { month = num; break; }
+  }
+  if (!month) return null;
+  const today = new Date();
+  let year = today.getFullYear();
+  let date = new Date(year, month - 1, day);
+  const diffDays = (today - date) / (1000 * 60 * 60 * 24);
+  if (diffDays > 60) {
+    year += 1;
+    date = new Date(year, month - 1, day);
+  }
+  return date;
+}
+
+function daysUntil(date) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return Math.round((d - today) / (1000 * 60 * 60 * 24));
+}
+
+function isAutoUrgent(deadline) {
+  const d = parseRussianDate(deadline);
+  if (!d) return false;
+  return daysUntil(d) <= 7;
+}
+
+function pluralDays(n) {
+  const abs = Math.abs(n);
+  const mod10  = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${abs} день`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${abs} дня`;
+  return `${abs} дней`;
+}
+
+function formatDeadline(deadline) {
+  if (displayMode === 'date') return deadline;
+  const d = parseRussianDate(deadline);
+  if (!d) return deadline;
+  const days = daysUntil(d);
+  if (days === 0)  return 'сегодня';
+  if (days === 1)  return 'завтра';
+  if (days === -1) return 'просрочено на 1 день';
+  if (days < 0)    return `просрочено на ${pluralDays(days)}`;
+  return `через ${pluralDays(days)}`;
+}
+
+function russianFromIso(iso) {
+  if (!iso) return '';
+  const parts = iso.split('-');
+  if (parts.length !== 3) return '';
+  const [y, m, d] = parts.map(Number);
+  if (!y || !m || !d || m < 1 || m > 12) return '';
+  return `${d} ${RU_MONTH_GENITIVE[m - 1]}`;
+}
+
+function isoFromRussian(deadline) {
+  const d = parseRussianDate(deadline);
+  if (!d) return '';
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function monthOf(deadline) {
+  const d = parseRussianDate(deadline);
+  if (!d) return NO_DATE_LABEL;
+  return `${RU_MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function monthSortKey(label) {
+  if (label === NO_DATE_LABEL) return Number.MAX_SAFE_INTEGER;
+  const m = label.match(/^(\S+)\s+(\d{4})$/);
+  if (!m) return Number.MAX_SAFE_INTEGER - 1;
+  const idx = RU_MONTH_NAMES.indexOf(m[1]);
+  if (idx < 0) return Number.MAX_SAFE_INTEGER - 1;
+  return parseInt(m[2], 10) * 12 + idx;
+}
+
+function taskDateSortKey(t) {
+  const d = parseRussianDate(t.deadline);
+  return d ? d.getTime() : Number.MAX_SAFE_INTEGER;
+}
+
+// ============================================================
+// TASK ASSEMBLY — merge defaults + overrides + custom
+// ============================================================
+function getColor(colorId) { return COLOR_PALETTE.find(c => c.id === colorId) || COLOR_PALETTE[0]; }
+function catColor(tag)     { return getColor((categories[tag] || {}).colorId || 'blue'); }
+
+function getAllEffectiveTasks() {
+  const fromDefaults = DEFAULT_TASKS
+    .filter(t => !deletedDefaults[t.id])
+    .map(t => {
+      const o = defaultOverrides[t.id] || {};
+      return {
+        id: t.id,
+        text:         o.text         ?? t.text,
+        deadline:     o.deadline     ?? t.deadline,
+        tag:          o.tag          ?? t.tag,
+        manualUrgent: o.manualUrgent ?? t.manualUrgent ?? false,
+        custom: false,
+      };
+    });
+  const fromCustom = customTasks.map(t => ({
+    id: t.id,
+    text: t.text,
+    deadline: t.deadline,
+    tag: t.tag,
+    manualUrgent: t.manualUrgent ?? false,
+    custom: true,
+  }));
+  return [...fromDefaults, ...fromCustom];
+}
+
+function isArchivable(t) {
+  if (checked[t.id]) return false;
+  const d = parseRussianDate(t.deadline);
+  if (!d) return false;
+  return daysUntil(d) < 0;
+}
+
+// ============================================================
+// TASK ACTIONS
+// ============================================================
+function toggle(id) {
+  if (editingTaskId === id) return;
+  checked[id] = !checked[id];
+  saveAllData();
+  render();
+}
+
+function setFilter(f) {
+  if (categoryEditMode) return;
+  filter = f;
+  render();
+}
+
+function addTask() {
+  const textEl     = document.getElementById('newText');
+  const nativeDate = document.getElementById('newDeadlineNative');
+  const tagEl      = document.getElementById('newTag');
+  const text = textEl.value.trim();
+  if (!text) { textEl.focus(); return; }
+  const tagVal = tagEl.value;
+  if (!tagVal || tagVal === NEW_CAT_SENTINEL) {
+    if (!Object.keys(categories).length) {
+      alert('Сначала создайте категорию');
+      return;
+    }
+    tagEl.value = Object.keys(categories)[0];
+  }
+  const deadline = russianFromIso(nativeDate.value) || '—';
+  customTasks.push({
+    id: nextId++,
+    text,
+    tag: tagEl.value,
+    deadline,
+    manualUrgent: false,
+    custom: true,
+  });
+  saveAllData();
+  // Reset add-bar
+  textEl.value = '';
+  nativeDate.value = '';
+  const disp = document.getElementById('newDeadlineDisp');
+  disp.textContent = 'Дедлайн';
+  disp.classList.add('empty');
+  render();
+}
+
+function startTaskEdit(id) {
+  editingTaskId = id;
+  render();
+  const el = document.getElementById('te-text-' + id);
+  if (el) { el.focus(); el.select(); }
+}
+
+function cancelTaskEdit() {
+  if (editingTaskId == null) return;
+  editingTaskId = null;
+  render();
+}
+
+function saveTaskEdit(id) {
+  const textEl     = document.getElementById('te-text-' + id);
+  const wrap       = document.getElementById('te-deadline-wrap-' + id);
+  const nativeDate = document.getElementById('te-deadline-native-' + id);
+  const tagEl      = document.getElementById('te-tag-' + id);
+  const urgentEl   = document.getElementById('te-urgent-' + id);
+  if (!textEl || !nativeDate || !tagEl || !urgentEl) return;
+  const text = textEl.value.trim();
+  if (!text) { textEl.focus(); return; }
+  const original = (wrap && wrap.dataset.original) || '';
+  let deadline;
+  if (nativeDate.value) {
+    deadline = russianFromIso(nativeDate.value) || '—';
+  } else {
+    deadline = original || '—';
+  }
+  let tag = tagEl.value;
+  if (!tag || tag === NEW_CAT_SENTINEL) tag = Object.keys(categories)[0] || 'visa';
+  const manualUrgent = urgentEl.checked;
+
+  const customIdx = customTasks.findIndex(t => t.id === id);
+  if (customIdx >= 0) {
+    customTasks[customIdx] = {
+      ...customTasks[customIdx],
+      text, deadline, tag, manualUrgent,
+    };
+  } else if (DEFAULT_TASKS.some(t => t.id === id)) {
+    defaultOverrides[id] = { text, deadline, tag, manualUrgent };
+  }
+  editingTaskId = null;
+  saveAllData();
+  render();
+}
+
+function confirmDeleteTask(id) {
+  const t = getAllEffectiveTasks().find(x => x.id === id);
+  if (!t) return;
+  if (!confirm(`Удалить задачу «${t.text}»?`)) return;
+  deleteTask(id);
+}
+
+function deleteTask(id) {
+  const customIdx = customTasks.findIndex(t => t.id === id);
+  if (customIdx >= 0) {
+    customTasks.splice(customIdx, 1);
+  } else {
+    deletedDefaults[id] = true;
+    delete defaultOverrides[id];
+  }
+  delete checked[id];
+  editingTaskId = null;
+  saveAllData();
+  render();
+}
+
+// ============================================================
+// CATEGORY ACTIONS
+// ============================================================
+function toggleCategoryEditMode() {
+  categoryEditMode = !categoryEditMode;
+  editingCategoryKey = null;
+  if (categoryEditMode) editingTaskId = null;
+  render();
+}
+
+function startCatRename(key) {
+  editingCategoryKey = key;
+  render();
+  const el = document.getElementById('cat-rename-' + key);
+  if (el) { el.focus(); el.select(); }
+}
+
+function saveCatRename(key) {
+  const el = document.getElementById('cat-rename-' + key);
+  if (!el) return;
+  const val = el.value.trim();
+  if (val && categories[key]) {
+    categories[key].label = val;
+    saveAllData();
+  }
+  editingCategoryKey = null;
+  render();
+}
+
+function cancelCatRename() {
+  editingCategoryKey = null;
+  render();
+}
+
+function confirmCatDelete(key) {
+  const cat = categories[key];
+  if (!cat) return;
+  if (!confirm(`Удалить категорию «${cat.label}»? Все задачи в ней тоже будут удалены.`)) return;
+  deleteCategory(key);
+}
+
+function deleteCategory(key) {
+  DEFAULT_TASKS.forEach(t => {
+    const effectiveTag = (defaultOverrides[t.id] && defaultOverrides[t.id].tag) || t.tag;
+    if (effectiveTag === key) {
+      deletedDefaults[t.id] = true;
+      delete defaultOverrides[t.id];
+      delete checked[t.id];
+    }
+  });
+  customTasks = customTasks.filter(t => {
+    if (t.tag === key) { delete checked[t.id]; return false; }
+    return true;
+  });
+  delete categories[key];
+  if (filter === key) filter = 'all';
+  saveAllData();
+  render();
+}
+
+// ============================================================
+// CATEGORY MODAL — supports inline creation from task forms
+// ============================================================
+function showCatModal(onSuccess) {
+  catModalSuccessCb = typeof onSuccess === 'function' ? onSuccess : null;
+  window._selCatColor = COLOR_PALETTE[0].id;
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeCatModal()">
+      <div class="modal">
+        <h3>Новая категория</h3>
+        <label>Название</label>
+        <input type="text" id="catName" placeholder="Например: Работа" onkeydown="if(event.key==='Enter')confirmCat()">
+        <label>Цвет</label>
+        <div class="color-grid">
+          ${COLOR_PALETTE.map(c => `
+            <div class="color-swatch${window._selCatColor === c.id ? ' selected' : ''}"
+                 style="background:${c.hex};color:${c.hex}"
+                 onclick="window._selCatColor='${c.id}';document.querySelectorAll('.color-swatch').forEach(s=>s.classList.remove('selected'));this.classList.add('selected')"></div>
+          `).join('')}
+        </div>
+        <div class="modal-btns">
+          <button class="cancel" onclick="closeCatModal()">Отмена</button>
+          <button class="confirm" onclick="confirmCat()">Создать</button>
+        </div>
+      </div>
+    </div>`;
+  setTimeout(() => { const el = document.getElementById('catName'); if (el) el.focus(); }, 50);
+}
+
+function closeCatModal() {
+  document.getElementById('modal-root').innerHTML = '';
+  catModalSuccessCb = null;
+}
+
+function confirmCat() {
+  const nameEl = document.getElementById('catName');
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { if (nameEl) nameEl.focus(); return; }
+  const key = 'cat_' + Date.now();
+  categories[key] = { label: name, colorId: window._selCatColor || 'blue' };
+  saveAllData();
+  document.getElementById('modal-root').innerHTML = '';
+  const cb = catModalSuccessCb;
+  catModalSuccessCb = null;
+  if (cb) cb(key);
+  else render();
+}
+
+// ============================================================
+// INLINE "+ Новая категория" FROM TASK FORMS
+// ============================================================
+function onAddTagChange() {
+  const sel = document.getElementById('newTag');
+  if (sel.value !== NEW_CAT_SENTINEL) return;
+  const prev = sel.dataset.prev && sel.dataset.prev !== NEW_CAT_SENTINEL
+    ? sel.dataset.prev
+    : (Object.keys(categories)[0] || '');
+  sel.value = prev;
+  showCatModal((newKey) => {
+    render();
+    const s = document.getElementById('newTag');
+    if (s) s.value = newKey;
+  });
+}
+
+function onEditTagChange(id) {
+  const sel = document.getElementById('te-tag-' + id);
+  if (!sel || sel.value !== NEW_CAT_SENTINEL) return;
+  const prev = sel.dataset.prev && sel.dataset.prev !== NEW_CAT_SENTINEL
+    ? sel.dataset.prev
+    : (Object.keys(categories)[0] || '');
+  sel.value = prev;
+  showCatModal((newKey) => {
+    // Avoid full re-render to preserve edit-form state. Inject option locally.
+    const s = document.getElementById('te-tag-' + id);
+    if (!s) return;
+    const placeholder = s.querySelector('option[value="' + NEW_CAT_SENTINEL + '"]');
+    const opt = document.createElement('option');
+    opt.value = newKey;
+    opt.textContent = categories[newKey].label;
+    s.insertBefore(opt, placeholder);
+    s.value = newKey;
+    s.dataset.prev = newKey;
+  });
+}
+
+// ============================================================
+// DATE PICKER — change handlers for add & edit forms
+// ============================================================
+function onAddDateChange() {
+  const native = document.getElementById('newDeadlineNative');
+  const disp   = document.getElementById('newDeadlineDisp');
+  const ru = russianFromIso(native.value);
+  if (ru) {
+    disp.textContent = ru;
+    disp.classList.remove('empty');
+  } else {
+    disp.textContent = 'Дедлайн';
+    disp.classList.add('empty');
+  }
+}
+
+function onEditDateChange(id) {
+  const native = document.getElementById('te-deadline-native-' + id);
+  const disp   = document.getElementById('te-deadline-disp-' + id);
+  const wrap   = document.getElementById('te-deadline-wrap-' + id);
+  const ru = russianFromIso(native.value);
+  if (ru) {
+    disp.textContent = ru;
+    disp.classList.remove('empty');
+  } else {
+    const original = (wrap && wrap.dataset.original) || '';
+    if (original && original !== '—') {
+      disp.textContent = original;
+      disp.classList.remove('empty');
+    } else {
+      disp.textContent = 'Дедлайн';
+      disp.classList.add('empty');
+    }
+  }
+}
+
+// ============================================================
+// ARCHIVE & DISPLAY-MODE TOGGLES
+// ============================================================
+function toggleArchive() {
+  showArchive = !showArchive;
+  saveAllData();
+  render();
+}
+
+function toggleDisplayMode() {
+  displayMode = displayMode === 'date' ? 'countdown' : 'date';
+  saveAllData();
+  render();
+}
+
+// ============================================================
+// RESET / BULK
+// ============================================================
+function resetProgress() {
+  if (!confirm('Сбросить весь прогресс? Задачи останутся.')) return;
+  checked = {};
+  saveAllData();
+  render();
+}
+
+function resetAll() {
+  if (!confirm('Сбросить ВСЁ? Задачи, прогресс, категории — всё вернётся к начальному состоянию.')) return;
+  checked = {}; customTasks = []; deletedDefaults = {}; defaultOverrides = {};
+  categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+  displayMode = 'date';
+  showArchive = false;
+  filter = 'all';
+  editingTaskId = null;
+  categoryEditMode = false;
+  editingCategoryKey = null;
+  saveAllData();
+  render();
+}
+
+// ============================================================
+// ESCAPING HELPERS
+// ============================================================
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+// ============================================================
+// RENDERING
+// ============================================================
+function buildCategoryOptionsHtml(selectedKey) {
+  let html = '';
+  for (const [k, v] of Object.entries(categories)) {
+    html += `<option value="${escapeAttr(k)}"${k === selectedKey ? ' selected' : ''}>${escapeHtml(v.label)}</option>`;
+  }
+  html += `<option value="${NEW_CAT_SENTINEL}">+ Новая категория</option>`;
+  return html;
+}
+
+function populateAddTagSelect() {
+  const sel = document.getElementById('newTag');
+  const preserve = sel.value;
+  sel.innerHTML = buildCategoryOptionsHtml(null);
+  if (preserve && categories[preserve]) sel.value = preserve;
+}
+
+function renderToolbar() {
+  const all = getAllEffectiveTasks();
+  const archiveCount = all.filter(t => isArchivable(t)).length;
+  const dmIcon  = displayMode === 'date' ? '📅' : '⏳';
+  const dmLabel = displayMode === 'date' ? 'дата' : 'осталось дней';
+  const dmNext  = displayMode === 'date' ? 'осталось дней' : 'дата';
+
+  let html = '';
+  if (archiveCount > 0) {
+    html += `<button class="toolbar-btn archive${showArchive ? ' active' : ''}"
+      onclick="toggleArchive()"
+      title="${showArchive ? 'Скрыть архив' : 'Показать архив'}">
+      <span>Архив</span><span>· ${archiveCount}</span>
+    </button>`;
+  }
+  html += `<button class="toolbar-btn display"
+    onclick="toggleDisplayMode()"
+    title="Переключить на: ${dmNext}">
+    <span class="tb-icon">${dmIcon}</span><span>${dmLabel}</span>
+  </button>`;
+  document.getElementById('toolbar').innerHTML = html;
+}
+
+function renderStats(scoped) {
+  const total      = scoped.length;
+  const done       = scoped.filter(t => checked[t.id]).length;
+  const pct        = total ? Math.round(done / total * 100) : 0;
+  const urgentLeft = scoped.filter(t => t._urgent && !checked[t.id]).length;
+  const scopeLabel = filter === 'all' ? 'все направления' : (categories[filter] || {}).label || filter;
+  const barHex     = filter === 'all' ? 'var(--accent)' : catColor(filter).hex;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat">
+      <div class="stat-label">Прогресс</div>
+      <div class="stat-val">${pct}%</div>
+      <div class="stat-bar"><div class="stat-bar-fill" style="width:${pct}%;background:${barHex}"></div></div>
+      <div class="stat-scope">${escapeHtml(scopeLabel)}</div>
+    </div>
+    <div class="stat"><div class="stat-label">Всего</div><div class="stat-val">${total}</div></div>
+    <div class="stat"><div class="stat-label">Готово</div><div class="stat-val" style="color:#12b76a">${done}</div></div>
+    <div class="stat"><div class="stat-label">Срочно</div><div class="stat-val" style="color:${urgentLeft ? 'var(--urgent)' : 'var(--text-faint)'}">${urgentLeft}</div></div>
+  `;
+}
+
+function renderFilters() {
+  let html = '';
+  if (!categoryEditMode) {
+    html += `<button class="filter-btn${filter === 'all' ? ' active' : ''}" onclick="setFilter('all')">Все</button>`;
+  }
+  for (const [k, v] of Object.entries(categories)) {
+    const c = getColor(v.colorId);
+    if (categoryEditMode) {
+      const isRenaming = editingCategoryKey === k;
+      const nameContent = isRenaming
+        ? `<input class="cat-rename-input" id="cat-rename-${escapeAttr(k)}"
+              value="${escapeAttr(v.label)}"
+              onclick="event.stopPropagation()"
+              onkeydown="if(event.key==='Enter')saveCatRename('${escapeAttr(k)}');if(event.key==='Escape')cancelCatRename()"
+              onblur="saveCatRename('${escapeAttr(k)}')">`
+        : `<span class="cat-name" onclick="event.stopPropagation();startCatRename('${escapeAttr(k)}')">${escapeHtml(v.label)}</span>`;
+      html += `<span class="filter-btn cat-editing">
+        <span class="filter-dot" style="background:${c.hex}"></span>
+        ${nameContent}
+        <button class="cat-del" onclick="event.stopPropagation();confirmCatDelete('${escapeAttr(k)}')" title="Удалить категорию">×</button>
+      </span>`;
+    } else {
+      html += `<button class="filter-btn${filter === k ? ' active' : ''}" onclick="setFilter('${escapeAttr(k)}')">
+        <span class="filter-dot" style="background:${c.hex}"></span>${escapeHtml(v.label)}
+      </button>`;
+    }
+  }
+  if (!categoryEditMode) {
+    html += `<button class="filter-btn add-cat-btn" onclick="showCatModal()">+ категория</button>`;
+  }
+  html += categoryEditMode
+    ? `<button class="cat-edit-toggle active" onclick="toggleCategoryEditMode()">✓ Готово</button>`
+    : `<button class="cat-edit-toggle" onclick="toggleCategoryEditMode()" title="Изменить категории">✎</button>`;
+  document.getElementById('filters').innerHTML = html;
+}
+
+function renderTaskCard(t, isArchivedDisplay) {
+  const isDone     = !!checked[t.id];
+  const isEditing  = editingTaskId === t.id;
+  const cat        = categories[t.tag];
+  const c          = cat ? getColor(cat.colorId) : COLOR_PALETTE[0];
+  const tagStyle   = `background:${c.bg};color:${c.hex};border:1px solid ${c.border}`;
+  const showUrgent = t._urgent && !isDone && !isArchivedDisplay;
+
+  if (isEditing) {
+    const iso       = isoFromRussian(t.deadline);
+    const hasReal   = !!t.deadline && t.deadline !== '—';
+    const dispText  = iso ? russianFromIso(iso) : (hasReal ? t.deadline : 'Дедлайн');
+    const dispEmpty = !iso && !hasReal;
+    return `<div class="task editing" data-id="${t.id}">
+      <div class="task-edit-form" onclick="event.stopPropagation()">
+        <input class="edit-field" id="te-text-${t.id}" type="text" value="${escapeAttr(t.text)}" placeholder="Задача"
+               onkeydown="if(event.key==='Enter')saveTaskEdit(${t.id});if(event.key==='Escape')cancelTaskEdit()">
+        <div class="edit-row">
+          <div class="date-picker" id="te-deadline-wrap-${t.id}" data-original="${escapeAttr(t.deadline || '')}">
+            <span class="date-display${dispEmpty ? ' empty' : ''}" id="te-deadline-disp-${t.id}">${escapeHtml(dispText)}</span>
+            <svg class="date-cal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <input type="date" class="date-native" id="te-deadline-native-${t.id}" value="${iso}" onchange="onEditDateChange(${t.id})">
+          </div>
+          <select class="edit-field" id="te-tag-${t.id}"
+                  onmousedown="this.dataset.prev=this.value" onchange="onEditTagChange(${t.id})">
+            ${buildCategoryOptionsHtml(t.tag)}
+          </select>
+        </div>
+        <label class="edit-urgent">
+          <input type="checkbox" id="te-urgent-${t.id}"${t.manualUrgent ? ' checked' : ''}>
+          Срочно (вручную)
+        </label>
+        <div class="edit-actions">
+          <button class="btn-edit-save" onclick="saveTaskEdit(${t.id})">Сохранить</button>
+          <button class="btn-edit-delete" onclick="confirmDeleteTask(${t.id})">Удалить</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="task${isDone ? ' done' : ''}${showUrgent ? ' urgent' : ''}${isArchivedDisplay ? ' archived' : ''}" onclick="toggle(${t.id})">
+    <div class="checkbox">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div class="task-body">
+      <div class="task-text">${escapeHtml(t.text)}</div>
+      <div class="task-row">
+        <span class="tag" style="${tagStyle}">${escapeHtml(cat ? cat.label : t.tag)}</span>
+        ${showUrgent ? '<span class="tag tag-urgent">срочно</span>' : ''}
+        ${isArchivedDisplay
+          ? '<span class="deadline overdue-label">Просрочено</span>'
+          : `<span class="deadline">${escapeHtml(formatDeadline(t.deadline))}</span>`}
+      </div>
+    </div>
+    <button class="task-edit-trigger" onclick="event.stopPropagation();startTaskEdit(${t.id})" title="Редактировать">✎</button>
+  </div>`;
+}
+
+function renderTasks(scopedActive, scopedArchived) {
+  let html = '';
+  if (scopedActive.length) {
+    const monthsMap = new Map();
+    scopedActive.forEach(t => {
+      const m = monthOf(t.deadline);
+      if (!monthsMap.has(m)) monthsMap.set(m, []);
+      monthsMap.get(m).push(t);
+    });
+    const sortedMonths = [...monthsMap.keys()].sort((a, b) => monthSortKey(a) - monthSortKey(b));
+    sortedMonths.forEach(m => {
+      const group = monthsMap.get(m);
+      group.sort((a, b) => taskDateSortKey(a) - taskDateSortKey(b));
+      const doneM = group.filter(t => checked[t.id]).length;
+      html += `<div class="month-group">
+        <div class="month-header"><span>${escapeHtml(m)}</span><span>${doneM}/${group.length}</span></div>`;
+      group.forEach(t => { html += renderTaskCard(t, false); });
+      html += '</div>';
+    });
+  } else {
+    const note = scopedArchived.length && !showArchive
+      ? 'Активных задач нет — все просрочены. Откройте архив.'
+      : 'Нет задач в этой категории';
+    html += `<div class="empty-state">${note}</div>`;
+  }
+
+  if (showArchive && scopedArchived.length) {
+    const sorted = scopedArchived.slice().sort((a, b) => taskDateSortKey(b) - taskDateSortKey(a));
+    html += `<div class="archive-section">
+      <div class="archive-header"><span>Архив · просрочено</span><span>${sorted.length}</span></div>`;
+    sorted.forEach(t => { html += renderTaskCard(t, true); });
+    html += `</div>`;
+  }
+
+  document.getElementById('tasks').innerHTML = html;
+}
+
+function render() {
+  populateAddTagSelect();
+  renderToolbar();
+
+  const all = getAllEffectiveTasks().map(t => ({
+    ...t,
+    _urgent: t.manualUrgent || isAutoUrgent(t.deadline),
+  }));
+  const archivable = all.filter(t => isArchivable(t));
+  const active     = all.filter(t => !isArchivable(t));
+
+  const scopedActive   = filter === 'all' ? active     : active.filter(t => t.tag === filter);
+  const scopedArchived = filter === 'all' ? archivable : archivable.filter(t => t.tag === filter);
+
+  renderStats(scopedActive);
+  renderFilters();
+  renderTasks(scopedActive, scopedArchived);
+
+  if (editingTaskId != null) {
+    const el = document.getElementById('te-text-' + editingTaskId);
+    if (el && document.activeElement !== el) el.focus();
+  }
+  if (editingCategoryKey != null) {
+    const el = document.getElementById('cat-rename-' + editingCategoryKey);
+    if (el && document.activeElement !== el) { el.focus(); el.select(); }
+  }
+}
+
+// ============================================================
+// GLOBAL DISMISS HANDLERS (Escape, click outside)
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (editingTaskId != null)        { cancelTaskEdit(); return; }
+  if (editingCategoryKey != null)   { cancelCatRename(); return; }
+  if (categoryEditMode)             { toggleCategoryEditMode(); }
+});
+
+document.addEventListener('click', (e) => {
+  if (editingTaskId == null) return;
+  const inForm    = e.target.closest('.task-edit-form');
+  const onTrigger = e.target.closest('.task-edit-trigger');
+  const inModal   = e.target.closest('.modal-overlay');
+  if (!inForm && !onTrigger && !inModal) cancelTaskEdit();
+});
+
+// ============================================================
+// INIT
+// ============================================================
+loadAllData();
+render();
+</script>
+</body>
+</html>
