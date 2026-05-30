@@ -6,6 +6,7 @@
 <title>Task Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --bg: #0e0e11;
@@ -32,12 +33,66 @@ body {
 }
 ::selection { background: var(--accent); color: #fff; }
 .container { max-width: 720px; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
-header { margin-bottom: 2rem; }
-header h1 {
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+.header-left { flex: 1; min-width: 0; }
+.header-left h1 {
   font-size: 1.65rem; font-weight: 600; letter-spacing: -0.02em;
   background: linear-gradient(135deg, #e4e4e7 0%, #8b8b96 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
+.header-right { display: flex; align-items: center; }
+
+/* === auth UI === */
+.auth-login-btn {
+  font-family: var(--mono); font-size: 0.72rem;
+  padding: 7px 14px; border-radius: 20px;
+  background: transparent; border: 1px solid var(--border);
+  color: var(--text-dim); cursor: pointer; transition: all 0.2s;
+}
+.auth-login-btn:hover { border-color: var(--accent); color: var(--text); }
+.auth-user {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 0.72rem;
+  padding: 4px 6px 4px 4px; border-radius: 20px;
+  background: var(--bg-card); border: 1px solid var(--border);
+}
+.auth-avatar {
+  width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+  background: var(--bg-surface);
+}
+.auth-avatar.fallback {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff;
+  font-weight: 600; font-size: 0.72rem; font-family: var(--font);
+}
+.auth-name { color: var(--text); padding: 0 4px; }
+.auth-logout {
+  background: none; border: none; color: var(--text-faint);
+  cursor: pointer; font-family: var(--mono); font-size: 0.7rem;
+  padding: 2px 8px; transition: color 0.15s;
+}
+.auth-logout:hover { color: var(--urgent); }
+.modal-text {
+  font-size: 0.85rem; color: var(--text-dim);
+  margin-bottom: 1.25rem; line-height: 1.5;
+}
+.tg-widget-container {
+  display: flex; justify-content: center;
+  margin: 0 0 1rem; min-height: 8px;
+}
+.sync-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: var(--mono); font-size: 0.6rem; padding: 2px 6px;
+  border-radius: 10px; background: var(--accent-dim); color: #c4b5fd;
+  margin-left: 6px;
+}
+.sync-badge.error { background: var(--urgent-bg); color: var(--urgent); }
+
+/* === stats === */
 .stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   margin-bottom: 1.25rem;
@@ -52,7 +107,6 @@ header h1 {
 .stat-bar-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
 .stat-scope { font-size: 0.6rem; color: var(--text-faint); margin-top: 6px; font-family: var(--mono); }
 
-/* === toolbar (archive + display mode toggles) === */
 .toolbar {
   display: flex; gap: 8px; align-items: center;
   justify-content: flex-end; flex-wrap: wrap;
@@ -68,12 +122,9 @@ header h1 {
 .toolbar-btn:hover { border-color: var(--text-faint); color: var(--text); }
 .toolbar-btn .tb-icon { font-size: 0.85rem; line-height: 1; }
 .toolbar-btn.archive.active {
-  background: var(--urgent-bg);
-  border-color: rgba(240,68,56,0.4);
-  color: var(--urgent);
+  background: var(--urgent-bg); border-color: rgba(240,68,56,0.4); color: var(--urgent);
 }
 
-/* === filters === */
 .filters {
   display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
   margin-bottom: 1rem;
@@ -93,27 +144,21 @@ header h1 {
 .filter-btn.add-cat-btn { border-style: dashed; color: var(--text-faint); }
 .filter-btn.add-cat-btn:hover { color: var(--text-dim); }
 
-/* === category edit mode === */
 .filter-btn.cat-editing {
-  border-style: dashed;
-  cursor: default;
+  border-style: dashed; cursor: default;
   animation: catBreathe 1.4s ease-in-out infinite;
 }
 @keyframes catBreathe {
   0%, 100% { border-color: var(--border); }
   50%      { border-color: var(--text-dim); }
 }
-.cat-name {
-  cursor: text; padding: 1px 3px; border-radius: 4px;
-  transition: background 0.15s;
-}
+.cat-name { cursor: text; padding: 1px 3px; border-radius: 4px; transition: background 0.15s; }
 .cat-name:hover { background: var(--bg-surface); }
 .cat-rename-input {
   background: var(--bg-surface); border: 1px solid var(--accent);
   border-radius: 4px; color: var(--text);
   font-family: inherit; font-size: inherit;
-  outline: none; padding: 2px 6px; width: 7em;
-  min-width: 4em;
+  outline: none; padding: 2px 6px; width: 7em; min-width: 4em;
 }
 .cat-del {
   background: none; border: none; color: var(--text-faint);
@@ -130,7 +175,6 @@ header h1 {
 .cat-edit-toggle:hover { color: var(--text-dim); border-color: var(--text-faint); }
 .cat-edit-toggle.active { color: #c4b5fd; border-color: var(--accent); background: var(--accent-dim); }
 
-/* === add bar === */
 .add-bar {
   display: flex; gap: 8px; margin-bottom: 1.75rem; flex-wrap: wrap;
   align-items: stretch;
@@ -154,7 +198,6 @@ header h1 {
 .add-btn:hover { opacity: 0.85; }
 .add-btn:active { transform: scale(0.97); }
 
-/* === date picker (replaces text deadline input) === */
 .date-picker {
   position: relative; display: flex; align-items: center;
   background: var(--bg-card); border: 1px solid var(--border);
@@ -175,12 +218,9 @@ header h1 {
   margin-left: 6px; pointer-events: none;
 }
 .date-picker .date-native {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  opacity: 0; cursor: pointer;
-  border: none; background: transparent;
-  padding: 0; margin: 0;
-  color-scheme: dark;
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; border: none; background: transparent;
+  padding: 0; margin: 0; color-scheme: dark;
   font-family: inherit; font-size: inherit;
 }
 .date-picker .date-native::-webkit-calendar-picker-indicator {
@@ -188,7 +228,6 @@ header h1 {
   cursor: pointer; opacity: 0; color: transparent; background: transparent;
 }
 
-/* === task list === */
 .month-group { margin-bottom: 2rem; }
 .month-header {
   font-family: var(--mono); font-size: 0.7rem; font-weight: 500;
@@ -206,10 +245,7 @@ header h1 {
 .task.urgent { border-left: 3px solid var(--urgent); background: var(--urgent-bg); }
 .task.done { opacity: 0.35; }
 .task.done .task-text { text-decoration: line-through; text-decoration-color: var(--text-faint); }
-.task.editing {
-  background: var(--bg-hover); cursor: default;
-  padding: 14px;
-}
+.task.editing { background: var(--bg-hover); cursor: default; padding: 14px; }
 .task.editing:hover { background: var(--bg-hover); }
 .checkbox {
   width: 20px; height: 20px; border-radius: 5px;
@@ -235,8 +271,6 @@ header h1 {
   color: var(--urgent); font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.06em;
 }
-
-/* always-visible task edit trigger (dimmed pencil) */
 .task-edit-trigger {
   position: absolute; top: 50%; right: 10px;
   transform: translateY(-50%);
@@ -248,11 +282,7 @@ header h1 {
 .task:hover .task-edit-trigger { opacity: 0.7; }
 .task-edit-trigger:hover { opacity: 1; color: var(--text); background: var(--bg-surface); }
 
-/* === archive section === */
-.archive-section {
-  margin-top: 2.25rem;
-  animation: fadeSection 0.2s ease-out;
-}
+.archive-section { margin-top: 2.25rem; animation: fadeSection 0.2s ease-out; }
 @keyframes fadeSection {
   from { opacity: 0; transform: translateY(-3px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -266,7 +296,6 @@ header h1 {
 .task.archived { opacity: 0.5; transition: opacity 0.15s; }
 .task.archived:hover { opacity: 0.85; }
 
-/* === inline task edit form === */
 .task-edit-form {
   width: 100%; display: flex; flex-direction: column; gap: 10px;
   animation: editFadeIn 0.18s ease-out;
@@ -286,21 +315,15 @@ header h1 {
 .edit-row > .edit-field, .edit-row > .date-picker { flex: 1; min-width: 110px; max-width: none; }
 select.edit-field { cursor: pointer; }
 .task-edit-form .date-picker {
-  background: var(--bg-surface);
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  font-size: 0.85rem;
-  min-width: 110px;
+  background: var(--bg-surface); padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--border); font-size: 0.85rem; min-width: 110px;
 }
 .edit-urgent {
   display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--mono); font-size: 0.74rem; color: var(--text-dim);
   cursor: pointer; user-select: none;
 }
-.edit-urgent input {
-  width: 16px; height: 16px; accent-color: var(--urgent); cursor: pointer;
-}
+.edit-urgent input { width: 16px; height: 16px; accent-color: var(--urgent); cursor: pointer; }
 .edit-actions { display: flex; gap: 8px; margin-top: 4px; }
 .btn-edit-save, .btn-edit-delete {
   padding: 8px 18px; border-radius: 6px; font-family: var(--mono);
@@ -309,13 +332,9 @@ select.edit-field { cursor: pointer; }
 }
 .btn-edit-save { background: var(--accent); color: #fff; }
 .btn-edit-save:hover { opacity: 0.85; }
-.btn-edit-delete {
-  background: transparent; color: var(--urgent);
-  border: 1px solid rgba(240,68,56,0.35);
-}
+.btn-edit-delete { background: transparent; color: var(--urgent); border: 1px solid rgba(240,68,56,0.35); }
 .btn-edit-delete:hover { background: var(--urgent-bg); border-color: var(--urgent); }
 
-/* === modal === */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);
   display: flex; align-items: center; justify-content: center;
@@ -372,7 +391,7 @@ select.edit-field { cursor: pointer; }
 @media (max-width: 600px) {
   .stats { grid-template-columns: repeat(2, 1fr); }
   .container { padding: 1.25rem 1rem 3rem; }
-  header h1 { font-size: 1.35rem; }
+  .header-left h1 { font-size: 1.35rem; }
   .add-bar { flex-direction: column; }
   .add-bar input[type="text"] { min-width: unset; }
   .add-bar .date-picker, .add-bar select { max-width: none; }
@@ -387,7 +406,10 @@ select.edit-field { cursor: pointer; }
 <body>
 <div class="container">
   <header>
-    <h1>Task Tracker</h1>
+    <div class="header-left">
+      <h1>Task Tracker</h1>
+    </div>
+    <div class="header-right" id="auth-section"></div>
   </header>
   <div class="stats" id="stats"></div>
   <div class="toolbar" id="toolbar"></div>
@@ -412,51 +434,17 @@ select.edit-field { cursor: pointer; }
 
 <script>
 // ============================================================
-// STORAGE — abstraction over localStorage
-// UI never touches localStorage directly. To migrate to a server
-// API later, only this object needs to change.
+// SUPABASE CLIENT
 // ============================================================
-const Storage = (() => {
-  const KEYS = {
-    checked:     'mp_checked',
-    tasks:       'mp_tasks',
-    deleted:     'mp_deleted',
-    overrides:   'mp_edits',
-    cats:        'mp_categories',
-    display:     'mp_display_mode',
-    showArchive: 'mp_show_archive',
-  };
-  function readJSON(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw == null) return fallback;
-      const v = JSON.parse(raw);
-      return v == null ? fallback : v;
-    } catch (e) { return fallback; }
-  }
-  function writeJSON(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-  }
-  return {
-    getChecked()              { return readJSON(KEYS.checked, {}); },
-    saveChecked(v)            { writeJSON(KEYS.checked, v); },
-    getTasks()                { return readJSON(KEYS.tasks, []); },
-    saveTasks(v)              { writeJSON(KEYS.tasks, v); },
-    getDeletedDefaults()      { return readJSON(KEYS.deleted, {}); },
-    saveDeletedDefaults(v)    { writeJSON(KEYS.deleted, v); },
-    getDefaultOverrides()     { return readJSON(KEYS.overrides, {}); },
-    saveDefaultOverrides(v)   { writeJSON(KEYS.overrides, v); },
-    getCategories()           { return readJSON(KEYS.cats, null); },
-    saveCategories(v)         { writeJSON(KEYS.cats, v); },
-    getDisplayMode()          { return readJSON(KEYS.display, 'date'); },
-    saveDisplayMode(v)        { writeJSON(KEYS.display, v); },
-    getShowArchive()          { return readJSON(KEYS.showArchive, false); },
-    saveShowArchive(v)        { writeJSON(KEYS.showArchive, v); },
-  };
-})();
+const SUPABASE_URL  = 'https://xulpgnrosspmbcevzgwl.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_LkFMJwQhgMwNfj2cf_CzpQ_0hm33iNM';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// REPLACE THIS with your bot's username (no @) after creating it in BotFather.
+const TELEGRAM_BOT_USERNAME = 'tasktrackerbyfargobot';
 
 // ============================================================
-// CONSTANTS — palette, default categories, default tasks
+// CONSTANTS
 // ============================================================
 const COLOR_PALETTE = [
   { id:'blue',   hex:'#2e90fa', bg:'rgba(46,144,250,0.1)',  border:'rgba(46,144,250,0.25)' },
@@ -478,42 +466,209 @@ const DEFAULT_CATEGORIES = {
   uni:     { label:'Германия', colorId:'purple' },
 };
 
-// Default seed tasks. `manualUrgent` is preserved; auto-urgent
-// is computed at render time from the deadline. `month` is no
-// longer stored — months are derived dynamically from deadlines.
 const DEFAULT_TASKS = [
-  { id:1,  text:'Снять копии со всех документов на визу', tag:'visa', deadline:'31 мая', manualUrgent:true },
-  { id:2,  text:'Найти контору/юриста для помощи с визой', tag:'visa', deadline:'2 июня', manualUrgent:true },
-  { id:3,  text:'Узнать статус Verpflichtungserklärung (инфо 2 июня)', tag:'visa', deadline:'2 июня', manualUrgent:true },
-  { id:4,  text:'Собрать ВКР из трёх отчётов по практике', tag:'diploma', deadline:'6 июня', manualUrgent:true },
-  { id:5,  text:'Скачать учебники для экзаменов (ЭБС Юрайт / АТиСО)', tag:'exam', deadline:'5 июня' },
-  { id:6,  text:'Заполнить анкету на визу C (Almaviva) + записаться на приём', tag:'visa', deadline:'10 июня' },
-  { id:7,  text:'Оформить страховку (AXA / Europ Assistance)', tag:'visa', deadline:'10 июня' },
-  { id:8,  text:'Сделать 2 фото 35×45 на белом фоне', tag:'visa', deadline:'10 июня' },
-  { id:9,  text:'Запросить у папы выписку из грузинского банка (3 мес.)', tag:'visa', deadline:'10 июня' },
-  { id:10, text:'Подготовить блок: Корпоративные финансы', tag:'exam', deadline:'10 июня' },
-  { id:11, text:'Подать документы на поступление в СевГУ', tag:'exam', deadline:'20 июня' },
-  { id:12, text:'Подготовить блок: Финансовая диагностика', tag:'exam', deadline:'20 июня' },
-  { id:13, text:'Защита диплома бакалавра', tag:'diploma', deadline:'26 июня' },
-  { id:14, text:'Подготовить блок: Бюджетная система РФ', tag:'exam', deadline:'30 июня' },
-  { id:15, text:'Поехать в Москву — подать документы в Almaviva + биометрия', tag:'visa', deadline:'конец июня' },
-  { id:16, text:'Подготовить блок: Налоговая система', tag:'exam', deadline:'10 июля' },
-  { id:17, text:'Подготовить блок: Банковское дело', tag:'exam', deadline:'20 июля' },
-  { id:18, text:'Подготовить блок: Инвестирование', tag:'exam', deadline:'31 июля' },
-  { id:19, text:'Вступительные экзамены в СевГУ', tag:'exam', deadline:'июль–август' },
-  { id:20, text:'Повторение: прогон 6 дисциплин + пробные тесты', tag:'exam', deadline:'1–10 августа' },
-  { id:21, text:'Получить визу, забрать паспорт', tag:'visa', deadline:'июль–август' },
-  { id:22, text:'Поездка в Германию (транзит через Турцию/Сербию → Италия → Хайльбронн)', tag:'visa', deadline:'лето' },
-  { id:23, text:'Поступление на «Финансы и Кредит» в СевГУ', tag:'exam', deadline:'сентябрь' },
-  { id:24, text:'Начать интенсивную подготовку к IELTS', tag:'uni', deadline:'сентябрь' },
-  { id:25, text:'Начать собирать документы для немецких вузов', tag:'uni', deadline:'октябрь–ноябрь' },
-  { id:26, text:'Сдать IELTS (цель 5.5+)', tag:'uni', deadline:'декабрь' },
+  { id:'1',  text:'Снять копии со всех документов на визу', tag:'visa', deadline:'31 мая', manualUrgent:true },
+  { id:'2',  text:'Найти контору/юриста для помощи с визой', tag:'visa', deadline:'2 июня', manualUrgent:true },
+  { id:'3',  text:'Узнать статус Verpflichtungserklärung (инфо 2 июня)', tag:'visa', deadline:'2 июня', manualUrgent:true },
+  { id:'4',  text:'Собрать ВКР из трёх отчётов по практике', tag:'diploma', deadline:'6 июня', manualUrgent:true },
+  { id:'5',  text:'Скачать учебники для экзаменов (ЭБС Юрайт / АТиСО)', tag:'exam', deadline:'5 июня' },
+  { id:'6',  text:'Заполнить анкету на визу C (Almaviva) + записаться на приём', tag:'visa', deadline:'10 июня' },
+  { id:'7',  text:'Оформить страховку (AXA / Europ Assistance)', tag:'visa', deadline:'10 июня' },
+  { id:'8',  text:'Сделать 2 фото 35×45 на белом фоне', tag:'visa', deadline:'10 июня' },
+  { id:'9',  text:'Запросить у папы выписку из грузинского банка (3 мес.)', tag:'visa', deadline:'10 июня' },
+  { id:'10', text:'Подготовить блок: Корпоративные финансы', tag:'exam', deadline:'10 июня' },
+  { id:'11', text:'Подать документы на поступление в СевГУ', tag:'exam', deadline:'20 июня' },
+  { id:'12', text:'Подготовить блок: Финансовая диагностика', tag:'exam', deadline:'20 июня' },
+  { id:'13', text:'Защита диплома бакалавра', tag:'diploma', deadline:'26 июня' },
+  { id:'14', text:'Подготовить блок: Бюджетная система РФ', tag:'exam', deadline:'30 июня' },
+  { id:'15', text:'Поехать в Москву — подать документы в Almaviva + биометрия', tag:'visa', deadline:'конец июня' },
+  { id:'16', text:'Подготовить блок: Налоговая система', tag:'exam', deadline:'10 июля' },
+  { id:'17', text:'Подготовить блок: Банковское дело', tag:'exam', deadline:'20 июля' },
+  { id:'18', text:'Подготовить блок: Инвестирование', tag:'exam', deadline:'31 июля' },
+  { id:'19', text:'Вступительные экзамены в СевГУ', tag:'exam', deadline:'июль–август' },
+  { id:'20', text:'Повторение: прогон 6 дисциплин + пробные тесты', tag:'exam', deadline:'1–10 августа' },
+  { id:'21', text:'Получить визу, забрать паспорт', tag:'visa', deadline:'июль–август' },
+  { id:'22', text:'Поездка в Германию (транзит через Турцию/Сербию → Италия → Хайльбронн)', tag:'visa', deadline:'лето' },
+  { id:'23', text:'Поступление на «Финансы и Кредит» в СевГУ', tag:'exam', deadline:'сентябрь' },
+  { id:'24', text:'Начать интенсивную подготовку к IELTS', tag:'uni', deadline:'сентябрь' },
+  { id:'25', text:'Начать собирать документы для немецких вузов', tag:'uni', deadline:'октябрь–ноябрь' },
+  { id:'26', text:'Сдать IELTS (цель 5.5+)', tag:'uni', deadline:'декабрь' },
 ];
 
-const RU_MONTH_NAMES     = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-const RU_MONTH_GENITIVE  = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
-const NO_DATE_LABEL      = 'Без даты';
-const NEW_CAT_SENTINEL   = '__new_cat__';
+const RU_MONTH_NAMES    = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const RU_MONTH_GENITIVE = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const NO_DATE_LABEL     = 'Без даты';
+const NEW_CAT_SENTINEL  = '__new_cat__';
+
+const LS_KEYS = {
+  checked: 'mp_checked', tasks: 'mp_tasks', deleted: 'mp_deleted',
+  overrides: 'mp_edits', cats: 'mp_categories',
+  display: 'mp_display_mode', showArchive: 'mp_show_archive',
+  authUser: 'mp_auth_user',
+};
+
+// ============================================================
+// STORAGE — dual-mode async abstraction (localStorage | Supabase)
+// UI never touches localStorage or Supabase directly.
+// ============================================================
+function readJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw == null) return fallback;
+    const v = JSON.parse(raw);
+    return v == null ? fallback : v;
+  } catch (e) { return fallback; }
+}
+function writeJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+
+const Storage = {
+  mode: 'local',    // 'local' | 'supabase'
+  userId: null,
+
+  // --- Bulk fetch (called by loadAllData) ---
+  async loadEverything() {
+    if (this.mode === 'supabase') {
+      const [tRes, cRes] = await Promise.all([
+        supabase.from('tasks').select('*').eq('user_id', this.userId),
+        supabase.from('categories').select('*').eq('user_id', this.userId),
+      ]);
+      if (tRes.error) throw tRes.error;
+      if (cRes.error) throw cRes.error;
+      const tasks = (tRes.data || []).map(r => ({
+        id: r.id, text: r.text, tag: r.tag,
+        deadline: r.deadline || '—',
+        manualUrgent: !!r.urgent, custom: true,
+      }));
+      const checked = {};
+      (tRes.data || []).forEach(r => { if (r.done) checked[r.id] = true; });
+      const categories = {};
+      (cRes.data || []).forEach(r => { categories[r.key] = { label: r.label, colorId: r.color_id }; });
+      return {
+        tasks, checked, categories,
+        deletedDefaults: {}, defaultOverrides: {},
+      };
+    }
+    return {
+      tasks: readJSON(LS_KEYS.tasks, []),
+      checked: readJSON(LS_KEYS.checked, {}),
+      categories: readJSON(LS_KEYS.cats, null),
+      deletedDefaults: readJSON(LS_KEYS.deleted, {}),
+      defaultOverrides: readJSON(LS_KEYS.overrides, {}),
+    };
+  },
+
+  // --- Per-task ops ---
+  async upsertTask(task, done) {
+    if (this.mode === 'supabase') {
+      const row = {
+        id: task.id, user_id: this.userId,
+        text: task.text, tag: task.tag,
+        deadline: task.deadline || null,
+        deadline_date: isoFromRussian(task.deadline) || null,
+        month: monthOf(task.deadline),
+        urgent: !!task.manualUrgent,
+        done: !!done,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await supabase.from('tasks').upsert(row);
+      if (error) throw error;
+    } else {
+      writeJSON(LS_KEYS.tasks, customTasks);
+      writeJSON(LS_KEYS.checked, checked);
+    }
+  },
+  async deleteTaskById(id) {
+    if (this.mode === 'supabase') {
+      const { error } = await supabase.from('tasks').delete()
+        .eq('id', id).eq('user_id', this.userId);
+      if (error) throw error;
+    } else {
+      writeJSON(LS_KEYS.tasks, customTasks);
+      writeJSON(LS_KEYS.deleted, deletedDefaults);
+      writeJSON(LS_KEYS.checked, checked);
+      writeJSON(LS_KEYS.overrides, defaultOverrides);
+    }
+  },
+  async setTaskDone(id, done) {
+    if (this.mode === 'supabase') {
+      const { error } = await supabase.from('tasks')
+        .update({ done, updated_at: new Date().toISOString() })
+        .eq('id', id).eq('user_id', this.userId);
+      if (error) throw error;
+    } else {
+      writeJSON(LS_KEYS.checked, checked);
+    }
+  },
+
+  // --- Per-category ops ---
+  async upsertCategory(key, cat) {
+    if (this.mode === 'supabase') {
+      const { data: existing } = await supabase.from('categories')
+        .select('id').eq('user_id', this.userId).eq('key', key).maybeSingle();
+      const payload = {
+        ...(existing ? { id: existing.id } : {}),
+        user_id: this.userId, key,
+        label: cat.label, color_id: cat.colorId,
+      };
+      const { error } = await supabase.from('categories').upsert(payload);
+      if (error) throw error;
+    } else {
+      writeJSON(LS_KEYS.cats, categories);
+    }
+  },
+  async deleteCategoryByKey(key) {
+    if (this.mode === 'supabase') {
+      await supabase.from('tasks').delete()
+        .eq('user_id', this.userId).eq('tag', key);
+      const { error } = await supabase.from('categories').delete()
+        .eq('user_id', this.userId).eq('key', key);
+      if (error) throw error;
+    } else {
+      writeJSON(LS_KEYS.cats, categories);
+      writeJSON(LS_KEYS.tasks, customTasks);
+      writeJSON(LS_KEYS.deleted, deletedDefaults);
+      writeJSON(LS_KEYS.overrides, defaultOverrides);
+      writeJSON(LS_KEYS.checked, checked);
+    }
+  },
+
+  // --- Defaults-overrides (local-only concept; no-op in Supabase) ---
+  async saveDefaultOverrides() {
+    if (this.mode === 'supabase') return;
+    writeJSON(LS_KEYS.overrides, defaultOverrides);
+  },
+  async saveDeletedDefaults() {
+    if (this.mode === 'supabase') return;
+    writeJSON(LS_KEYS.deleted, deletedDefaults);
+  },
+
+  // --- Reset (full wipe for current user) ---
+  async resetAllRemote() {
+    if (this.mode !== 'supabase') return;
+    await supabase.from('tasks').delete().eq('user_id', this.userId);
+    await supabase.from('categories').delete().eq('user_id', this.userId);
+  },
+
+  // --- Bulk insert (used by migration) ---
+  async bulkInsertTasks(rows) {
+    if (this.mode !== 'supabase') return;
+    if (!rows.length) return;
+    const { error } = await supabase.from('tasks').insert(rows);
+    if (error) throw error;
+  },
+  async bulkInsertCategories(rows) {
+    if (this.mode !== 'supabase') return;
+    if (!rows.length) return;
+    const { error } = await supabase.from('categories').insert(rows);
+    if (error) throw error;
+  },
+
+  // --- Device preferences (always localStorage) ---
+  async getDisplayMode()       { return readJSON(LS_KEYS.display, 'date'); },
+  async saveDisplayMode(v)     { writeJSON(LS_KEYS.display, v); },
+  async getShowArchive()       { return readJSON(LS_KEYS.showArchive, false); },
+  async saveShowArchive(v)     { writeJSON(LS_KEYS.showArchive, v); },
+};
 
 // ============================================================
 // STATE
@@ -531,45 +686,59 @@ let categoryEditMode = false;
 let editingCategoryKey = null;
 let nextId = 1000;
 let catModalSuccessCb = null;
+let currentUser = null;     // Telegram user object when authenticated
+let syncErrorMessage = '';  // shows in header if Supabase calls fail
 
 // ============================================================
 // LOAD & SAVE (via Storage)
 // ============================================================
-function loadAllData() {
-  checked          = Storage.getChecked();
-  customTasks      = Storage.getTasks();
-  deletedDefaults  = Storage.getDeletedDefaults();
-  defaultOverrides = Storage.getDefaultOverrides();
-  categories       = Storage.getCategories();
-  displayMode      = Storage.getDisplayMode();
-  showArchive      = Storage.getShowArchive();
+async function loadAllData() {
+  let state;
+  try {
+    state = await Storage.loadEverything();
+    syncErrorMessage = '';
+  } catch (e) {
+    console.error('loadEverything failed:', e);
+    syncErrorMessage = 'Ошибка синхронизации';
+    if (Storage.mode === 'supabase') {
+      // Fall back to local mode so app remains usable
+      Storage.mode = 'local';
+      Storage.userId = null;
+      currentUser = null;
+      localStorage.removeItem(LS_KEYS.authUser);
+      state = await Storage.loadEverything();
+    } else {
+      state = { tasks: [], checked: {}, categories: null, deletedDefaults: {}, defaultOverrides: {} };
+    }
+  }
+  customTasks      = state.tasks || [];
+  checked          = state.checked || {};
+  categories       = state.categories;
+  deletedDefaults  = state.deletedDefaults || {};
+  defaultOverrides = state.defaultOverrides || {};
 
-  // Migrate legacy text-only overrides (string -> {text})
+  // Migrations (local-only fields)
   for (const [id, val] of Object.entries(defaultOverrides)) {
     if (typeof val === 'string') defaultOverrides[id] = { text: val };
   }
-  // Migrate legacy `urgent` -> `manualUrgent` on custom tasks
   customTasks.forEach(t => {
+    t.id = String(t.id);
     if (t.urgent !== undefined && t.manualUrgent === undefined) t.manualUrgent = t.urgent;
     delete t.urgent;
-    // Drop legacy stored `month` — it's derived now
     delete t.month;
   });
   if (!categories || !Object.keys(categories).length) {
     categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
   }
+  displayMode = await Storage.getDisplayMode();
+  showArchive = await Storage.getShowArchive();
   if (displayMode !== 'date' && displayMode !== 'countdown') displayMode = 'date';
-  if (customTasks.length) nextId = Math.max(...customTasks.map(t => t.id), 999) + 1;
-}
 
-function saveAllData() {
-  Storage.saveChecked(checked);
-  Storage.saveTasks(customTasks);
-  Storage.saveDeletedDefaults(deletedDefaults);
-  Storage.saveDefaultOverrides(defaultOverrides);
-  Storage.saveCategories(categories);
-  Storage.saveDisplayMode(displayMode);
-  Storage.saveShowArchive(showArchive);
+  // nextId for local integer-ID generation
+  const numericIds = customTasks
+    .map(t => parseInt(t.id, 10))
+    .filter(n => !isNaN(n));
+  nextId = numericIds.length ? Math.max(...numericIds, 999) + 1 : 1000;
 }
 
 // ============================================================
@@ -581,7 +750,6 @@ const RU_MONTH_PREFIXES = [
   ['сентябр',9],['октябр',10], ['ноябр',11], ['декабр',12],
 ];
 
-// Strict "DD месяц". Vague forms ("конец июня", "лето", ranges, "—") return null.
 function parseRussianDate(s) {
   if (!s) return null;
   const str = String(s).toLowerCase().trim();
@@ -599,18 +767,13 @@ function parseRussianDate(s) {
   let year = today.getFullYear();
   let date = new Date(year, month - 1, day);
   const diffDays = (today - date) / (1000 * 60 * 60 * 24);
-  if (diffDays > 60) {
-    year += 1;
-    date = new Date(year, month - 1, day);
-  }
+  if (diffDays > 60) { year += 1; date = new Date(year, month - 1, day); }
   return date;
 }
 
 function daysUntil(date) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(date); d.setHours(0,0,0,0);
   return Math.round((d - today) / (1000 * 60 * 60 * 24));
 }
 
@@ -621,11 +784,9 @@ function isAutoUrgent(deadline) {
 }
 
 function pluralDays(n) {
-  const abs = Math.abs(n);
-  const mod10  = abs % 10;
-  const mod100 = abs % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${abs} день`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${abs} дня`;
+  const abs = Math.abs(n); const m10 = abs % 10; const m100 = abs % 100;
+  if (m10 === 1 && m100 !== 11) return `${abs} день`;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return `${abs} дня`;
   return `${abs} дней`;
 }
 
@@ -653,8 +814,8 @@ function russianFromIso(iso) {
 function isoFromRussian(deadline) {
   const d = parseRussianDate(deadline);
   if (!d) return '';
-  const y   = d.getFullYear();
-  const m   = String(d.getMonth() + 1).padStart(2, '0');
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
@@ -680,12 +841,17 @@ function taskDateSortKey(t) {
 }
 
 // ============================================================
-// TASK ASSEMBLY — merge defaults + overrides + custom
+// TASK ASSEMBLY
+// In Supabase mode there are no "default" tasks — everything is
+// a real row. In local mode defaults merge with overrides + custom.
 // ============================================================
 function getColor(colorId) { return COLOR_PALETTE.find(c => c.id === colorId) || COLOR_PALETTE[0]; }
 function catColor(tag)     { return getColor((categories[tag] || {}).colorId || 'blue'); }
 
 function getAllEffectiveTasks() {
+  if (Storage.mode === 'supabase') {
+    return customTasks.map(t => ({ ...t, custom: true }));
+  }
   const fromDefaults = DEFAULT_TASKS
     .filter(t => !deletedDefaults[t.id])
     .map(t => {
@@ -700,11 +866,8 @@ function getAllEffectiveTasks() {
       };
     });
   const fromCustom = customTasks.map(t => ({
-    id: t.id,
-    text: t.text,
-    deadline: t.deadline,
-    tag: t.tag,
-    manualUrgent: t.manualUrgent ?? false,
+    id: t.id, text: t.text, deadline: t.deadline,
+    tag: t.tag, manualUrgent: t.manualUrgent ?? false,
     custom: true,
   }));
   return [...fromDefaults, ...fromCustom];
@@ -717,69 +880,70 @@ function isArchivable(t) {
   return daysUntil(d) < 0;
 }
 
+function generateTaskId() {
+  if (Storage.mode === 'supabase') {
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
+  }
+  return String(nextId++);
+}
+
 // ============================================================
-// TASK ACTIONS
+// TASK ACTIONS (all async — write to storage then await; render
+// is called optimistically before the network write completes).
 // ============================================================
-function toggle(id) {
+async function toggle(id) {
   if (editingTaskId === id) return;
   checked[id] = !checked[id];
-  saveAllData();
   render();
+  try { await Storage.setTaskDone(id, !!checked[id]); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
 }
 
 function setFilter(f) {
   if (categoryEditMode) return;
-  filter = f;
-  render();
+  filter = f; render();
 }
 
-function addTask() {
+async function addTask() {
   const textEl     = document.getElementById('newText');
   const nativeDate = document.getElementById('newDeadlineNative');
   const tagEl      = document.getElementById('newTag');
   const text = textEl.value.trim();
   if (!text) { textEl.focus(); return; }
-  const tagVal = tagEl.value;
+  let tagVal = tagEl.value;
   if (!tagVal || tagVal === NEW_CAT_SENTINEL) {
-    if (!Object.keys(categories).length) {
-      alert('Сначала создайте категорию');
-      return;
-    }
-    tagEl.value = Object.keys(categories)[0];
+    if (!Object.keys(categories).length) { alert('Сначала создайте категорию'); return; }
+    tagVal = Object.keys(categories)[0];
   }
   const deadline = russianFromIso(nativeDate.value) || '—';
-  customTasks.push({
-    id: nextId++,
-    text,
-    tag: tagEl.value,
-    deadline,
-    manualUrgent: false,
-    custom: true,
-  });
-  saveAllData();
-  // Reset add-bar
-  textEl.value = '';
-  nativeDate.value = '';
+  const newTask = {
+    id: generateTaskId(), text, tag: tagVal, deadline,
+    manualUrgent: false, custom: true,
+  };
+  customTasks.push(newTask);
+  // Reset form
+  textEl.value = ''; nativeDate.value = '';
   const disp = document.getElementById('newDeadlineDisp');
-  disp.textContent = 'Дедлайн';
-  disp.classList.add('empty');
+  disp.textContent = 'Дедлайн'; disp.classList.add('empty');
   render();
+  try { await Storage.upsertTask(newTask, false); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
 }
 
 function startTaskEdit(id) {
-  editingTaskId = id;
-  render();
+  editingTaskId = id; render();
   const el = document.getElementById('te-text-' + id);
   if (el) { el.focus(); el.select(); }
 }
 
 function cancelTaskEdit() {
   if (editingTaskId == null) return;
-  editingTaskId = null;
-  render();
+  editingTaskId = null; render();
 }
 
-function saveTaskEdit(id) {
+async function saveTaskEdit(id) {
   const textEl     = document.getElementById('te-text-' + id);
   const wrap       = document.getElementById('te-deadline-wrap-' + id);
   const nativeDate = document.getElementById('te-deadline-native-' + id);
@@ -789,12 +953,9 @@ function saveTaskEdit(id) {
   const text = textEl.value.trim();
   if (!text) { textEl.focus(); return; }
   const original = (wrap && wrap.dataset.original) || '';
-  let deadline;
-  if (nativeDate.value) {
-    deadline = russianFromIso(nativeDate.value) || '—';
-  } else {
-    deadline = original || '—';
-  }
+  const deadline = nativeDate.value
+    ? (russianFromIso(nativeDate.value) || '—')
+    : (original || '—');
   let tag = tagEl.value;
   if (!tag || tag === NEW_CAT_SENTINEL) tag = Object.keys(categories)[0] || 'visa';
   const manualUrgent = urgentEl.checked;
@@ -802,15 +963,18 @@ function saveTaskEdit(id) {
   const customIdx = customTasks.findIndex(t => t.id === id);
   if (customIdx >= 0) {
     customTasks[customIdx] = {
-      ...customTasks[customIdx],
-      text, deadline, tag, manualUrgent,
+      ...customTasks[customIdx], text, deadline, tag, manualUrgent,
     };
-  } else if (DEFAULT_TASKS.some(t => t.id === id)) {
+    editingTaskId = null; render();
+    try { await Storage.upsertTask(customTasks[customIdx], !!checked[id]); markSync(true); }
+    catch (e) { console.error(e); markSync(false); }
+  } else if (Storage.mode === 'local' && DEFAULT_TASKS.some(t => t.id === id)) {
     defaultOverrides[id] = { text, deadline, tag, manualUrgent };
+    editingTaskId = null; render();
+    await Storage.saveDefaultOverrides();
+  } else {
+    editingTaskId = null; render();
   }
-  editingTaskId = null;
-  saveAllData();
-  render();
 }
 
 function confirmDeleteTask(id) {
@@ -820,18 +984,30 @@ function confirmDeleteTask(id) {
   deleteTask(id);
 }
 
-function deleteTask(id) {
+async function deleteTask(id) {
   const customIdx = customTasks.findIndex(t => t.id === id);
+  const wasDefault = customIdx < 0 && DEFAULT_TASKS.some(t => t.id === id);
   if (customIdx >= 0) {
     customTasks.splice(customIdx, 1);
-  } else {
+  } else if (wasDefault) {
     deletedDefaults[id] = true;
     delete defaultOverrides[id];
   }
   delete checked[id];
   editingTaskId = null;
-  saveAllData();
   render();
+  try {
+    if (Storage.mode === 'supabase') {
+      if (customIdx >= 0) await Storage.deleteTaskById(id);
+    } else {
+      if (wasDefault) {
+        await Storage.saveDeletedDefaults();
+        await Storage.saveDefaultOverrides();
+      }
+      await Storage.deleteTaskById(id);
+    }
+    markSync(true);
+  } catch (e) { console.error(e); markSync(false); }
 }
 
 // ============================================================
@@ -845,28 +1021,24 @@ function toggleCategoryEditMode() {
 }
 
 function startCatRename(key) {
-  editingCategoryKey = key;
-  render();
+  editingCategoryKey = key; render();
   const el = document.getElementById('cat-rename-' + key);
   if (el) { el.focus(); el.select(); }
 }
 
-function saveCatRename(key) {
+async function saveCatRename(key) {
   const el = document.getElementById('cat-rename-' + key);
   if (!el) return;
   const val = el.value.trim();
   if (val && categories[key]) {
     categories[key].label = val;
-    saveAllData();
+    try { await Storage.upsertCategory(key, categories[key]); markSync(true); }
+    catch (e) { console.error(e); markSync(false); }
   }
-  editingCategoryKey = null;
-  render();
+  editingCategoryKey = null; render();
 }
 
-function cancelCatRename() {
-  editingCategoryKey = null;
-  render();
-}
+function cancelCatRename() { editingCategoryKey = null; render(); }
 
 function confirmCatDelete(key) {
   const cat = categories[key];
@@ -875,7 +1047,8 @@ function confirmCatDelete(key) {
   deleteCategory(key);
 }
 
-function deleteCategory(key) {
+async function deleteCategory(key) {
+  // Local-mode default tasks
   DEFAULT_TASKS.forEach(t => {
     const effectiveTag = (defaultOverrides[t.id] && defaultOverrides[t.id].tag) || t.tag;
     if (effectiveTag === key) {
@@ -890,12 +1063,13 @@ function deleteCategory(key) {
   });
   delete categories[key];
   if (filter === key) filter = 'all';
-  saveAllData();
   render();
+  try { await Storage.deleteCategoryByKey(key); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
 }
 
 // ============================================================
-// CATEGORY MODAL — supports inline creation from task forms
+// CATEGORY MODAL — supports callback for inline-creation flows
 // ============================================================
 function showCatModal(onSuccess) {
   catModalSuccessCb = typeof onSuccess === 'function' ? onSuccess : null;
@@ -929,14 +1103,15 @@ function closeCatModal() {
   catModalSuccessCb = null;
 }
 
-function confirmCat() {
+async function confirmCat() {
   const nameEl = document.getElementById('catName');
   const name = nameEl ? nameEl.value.trim() : '';
   if (!name) { if (nameEl) nameEl.focus(); return; }
   const key = 'cat_' + Date.now();
   categories[key] = { label: name, colorId: window._selCatColor || 'blue' };
-  saveAllData();
   document.getElementById('modal-root').innerHTML = '';
+  try { await Storage.upsertCategory(key, categories[key]); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
   const cb = catModalSuccessCb;
   catModalSuccessCb = null;
   if (cb) cb(key);
@@ -968,7 +1143,6 @@ function onEditTagChange(id) {
     : (Object.keys(categories)[0] || '');
   sel.value = prev;
   showCatModal((newKey) => {
-    // Avoid full re-render to preserve edit-form state. Inject option locally.
     const s = document.getElementById('te-tag-' + id);
     if (!s) return;
     const placeholder = s.querySelector('option[value="' + NEW_CAT_SENTINEL + '"]');
@@ -982,19 +1156,14 @@ function onEditTagChange(id) {
 }
 
 // ============================================================
-// DATE PICKER — change handlers for add & edit forms
+// DATE PICKER — change handlers
 // ============================================================
 function onAddDateChange() {
   const native = document.getElementById('newDeadlineNative');
   const disp   = document.getElementById('newDeadlineDisp');
   const ru = russianFromIso(native.value);
-  if (ru) {
-    disp.textContent = ru;
-    disp.classList.remove('empty');
-  } else {
-    disp.textContent = 'Дедлайн';
-    disp.classList.add('empty');
-  }
+  if (ru) { disp.textContent = ru; disp.classList.remove('empty'); }
+  else    { disp.textContent = 'Дедлайн'; disp.classList.add('empty'); }
 }
 
 function onEditDateChange(id) {
@@ -1002,67 +1171,261 @@ function onEditDateChange(id) {
   const disp   = document.getElementById('te-deadline-disp-' + id);
   const wrap   = document.getElementById('te-deadline-wrap-' + id);
   const ru = russianFromIso(native.value);
-  if (ru) {
-    disp.textContent = ru;
-    disp.classList.remove('empty');
+  if (ru) { disp.textContent = ru; disp.classList.remove('empty'); return; }
+  const original = (wrap && wrap.dataset.original) || '';
+  if (original && original !== '—') {
+    disp.textContent = original; disp.classList.remove('empty');
   } else {
-    const original = (wrap && wrap.dataset.original) || '';
-    if (original && original !== '—') {
-      disp.textContent = original;
-      disp.classList.remove('empty');
-    } else {
-      disp.textContent = 'Дедлайн';
-      disp.classList.add('empty');
-    }
+    disp.textContent = 'Дедлайн'; disp.classList.add('empty');
   }
 }
 
 // ============================================================
-// ARCHIVE & DISPLAY-MODE TOGGLES
+// TOGGLES (archive, display mode)
 // ============================================================
-function toggleArchive() {
+async function toggleArchive() {
   showArchive = !showArchive;
-  saveAllData();
+  await Storage.saveShowArchive(showArchive);
   render();
 }
-
-function toggleDisplayMode() {
+async function toggleDisplayMode() {
   displayMode = displayMode === 'date' ? 'countdown' : 'date';
-  saveAllData();
+  await Storage.saveDisplayMode(displayMode);
   render();
 }
 
 // ============================================================
 // RESET / BULK
 // ============================================================
-function resetProgress() {
+async function resetProgress() {
   if (!confirm('Сбросить весь прогресс? Задачи останутся.')) return;
+  // Mark all current effective tasks as not-done
+  const allIds = getAllEffectiveTasks().map(t => t.id);
   checked = {};
-  saveAllData();
   render();
+  try {
+    if (Storage.mode === 'supabase') {
+      await supabase.from('tasks').update({ done: false }).eq('user_id', Storage.userId);
+    } else {
+      writeJSON(LS_KEYS.checked, checked);
+    }
+    markSync(true);
+  } catch (e) { console.error(e); markSync(false); }
 }
 
-function resetAll() {
+async function resetAll() {
   if (!confirm('Сбросить ВСЁ? Задачи, прогресс, категории — всё вернётся к начальному состоянию.')) return;
   checked = {}; customTasks = []; deletedDefaults = {}; defaultOverrides = {};
   categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
-  displayMode = 'date';
-  showArchive = false;
+  displayMode = 'date'; showArchive = false; filter = 'all';
+  editingTaskId = null; categoryEditMode = false; editingCategoryKey = null;
+  render();
+  try {
+    if (Storage.mode === 'supabase') {
+      await Storage.resetAllRemote();
+      // Re-seed default categories in supabase
+      const catRows = Object.entries(categories).map(([key, v]) => ({
+        user_id: Storage.userId, key, label: v.label, color_id: v.colorId,
+      }));
+      await Storage.bulkInsertCategories(catRows);
+    } else {
+      writeJSON(LS_KEYS.checked, checked);
+      writeJSON(LS_KEYS.tasks, customTasks);
+      writeJSON(LS_KEYS.deleted, deletedDefaults);
+      writeJSON(LS_KEYS.overrides, defaultOverrides);
+      writeJSON(LS_KEYS.cats, categories);
+    }
+    await Storage.saveDisplayMode(displayMode);
+    await Storage.saveShowArchive(showArchive);
+    markSync(true);
+  } catch (e) { console.error(e); markSync(false); }
+  await loadAllData();
+  render();
+}
+
+// ============================================================
+// AUTH — Telegram login + Supabase user sync
+// ============================================================
+function showLoginModal() {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal-overlay" onclick="if(event.target===this)closeLoginModal()">
+      <div class="modal">
+        <h3>Войти через Telegram</h3>
+        <p class="modal-text">Авторизация через Telegram позволяет синхронизировать задачи между устройствами.</p>
+        <div id="tg-widget-container" class="tg-widget-container"></div>
+        <div class="modal-btns">
+          <button class="cancel" onclick="closeLoginModal()">Отмена</button>
+          <button class="confirm" id="connectTgBtn" onclick="mountTelegramWidget()">Подключить Telegram</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function closeLoginModal() { document.getElementById('modal-root').innerHTML = ''; }
+
+function mountTelegramWidget() {
+  const container = document.getElementById('tg-widget-container');
+  if (!container) return;
+  container.innerHTML = '';
+  if (TELEGRAM_BOT_USERNAME === 'YOUR_BOT_USERNAME') {
+    container.innerHTML = `<div style="color:var(--urgent);font-family:var(--mono);font-size:0.72rem;text-align:center">
+      Сначала укажите имя бота в TELEGRAM_BOT_USERNAME (в коде).
+    </div>`;
+    return;
+  }
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://telegram.org/js/telegram-widget.js?22';
+  script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
+  script.setAttribute('data-size', 'medium');
+  script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+  script.setAttribute('data-request-access', 'write');
+  container.appendChild(script);
+  const btn = document.getElementById('connectTgBtn');
+  if (btn) btn.style.display = 'none';
+}
+
+// Called by Telegram widget on successful auth
+async function onTelegramAuth(user) {
+  // user = { id, first_name, last_name, username, photo_url, auth_date, hash }
+  // SECURITY NOTE: in production verify `hash` server-side. Without a
+  // server we trust the widget's client-side data; this is fine for a
+  // personal tracker but not for sensitive multi-user data.
+  closeLoginModal();
+  try {
+    await supabase.from('users').upsert({
+      id: user.id,
+      username: user.username || null,
+      first_name: user.first_name || null,
+    });
+  } catch (e) {
+    console.error('Failed to upsert user', e);
+    alert('Не удалось сохранить пользователя в Supabase: ' + (e.message || e));
+    return;
+  }
+
+  // Snapshot local data before mode switch
+  const localTasksLs      = readJSON(LS_KEYS.tasks, []);
+  const localCheckedLs    = readJSON(LS_KEYS.checked, {});
+  const localCatsLs       = readJSON(LS_KEYS.cats, null);
+  const localDeletedLs    = readJSON(LS_KEYS.deleted, {});
+  const localOverridesLs  = readJSON(LS_KEYS.overrides, {});
+  const hasLocalData =
+    (localTasksLs && localTasksLs.length > 0) ||
+    (localCatsLs && Object.keys(localCatsLs || {}).length > 0) ||
+    Object.keys(localCheckedLs || {}).length > 0;
+
+  Storage.mode   = 'supabase';
+  Storage.userId = user.id;
+  currentUser    = user;
+  localStorage.setItem(LS_KEYS.authUser, JSON.stringify(user));
+
+  if (hasLocalData) {
+    const doMigrate = confirm('Перенести задачи в облако?');
+    if (doMigrate) {
+      try {
+        await migrateLocalToSupabase({
+          localTasks: localTasksLs,
+          localChecked: localCheckedLs,
+          localCats: localCatsLs,
+          localDeleted: localDeletedLs,
+          localOverrides: localOverridesLs,
+        });
+      } catch (e) {
+        console.error('Migration failed', e);
+        alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
+      }
+    }
+  }
+
+  await loadAllData();
+  render();
+  renderAuthSection();
+}
+
+async function migrateLocalToSupabase(snap) {
+  // Build full task list from local default + custom + overrides + deletions
+  const tasksToInsert = [];
+  DEFAULT_TASKS
+    .filter(t => !snap.localDeleted[t.id])
+    .forEach(t => {
+      const o = snap.localOverrides[t.id] || {};
+      const deadline = o.deadline ?? t.deadline;
+      tasksToInsert.push({
+        id: crypto.randomUUID(),
+        user_id: Storage.userId,
+        text: o.text ?? t.text,
+        tag:  o.tag  ?? t.tag,
+        deadline: deadline || null,
+        deadline_date: isoFromRussian(deadline) || null,
+        month: monthOf(deadline),
+        urgent: !!(o.manualUrgent ?? t.manualUrgent ?? false),
+        done:   !!snap.localChecked[t.id],
+        updated_at: new Date().toISOString(),
+      });
+    });
+  (snap.localTasks || []).forEach(t => {
+    const deadline = t.deadline || '—';
+    tasksToInsert.push({
+      id: crypto.randomUUID(),
+      user_id: Storage.userId,
+      text: t.text, tag: t.tag,
+      deadline: deadline || null,
+      deadline_date: isoFromRussian(deadline) || null,
+      month: monthOf(deadline),
+      urgent: !!(t.manualUrgent ?? t.urgent ?? false),
+      done:   !!snap.localChecked[t.id],
+      updated_at: new Date().toISOString(),
+    });
+  });
+
+  const catsSource = (snap.localCats && Object.keys(snap.localCats).length)
+    ? snap.localCats
+    : DEFAULT_CATEGORIES;
+  const catsToInsert = Object.entries(catsSource).map(([key, v]) => ({
+    user_id: Storage.userId, key,
+    label: v.label, color_id: v.colorId,
+  }));
+
+  await Storage.bulkInsertCategories(catsToInsert);
+  await Storage.bulkInsertTasks(tasksToInsert);
+
+  // Clear localStorage data keys (keep device prefs like display mode)
+  localStorage.removeItem(LS_KEYS.tasks);
+  localStorage.removeItem(LS_KEYS.checked);
+  localStorage.removeItem(LS_KEYS.deleted);
+  localStorage.removeItem(LS_KEYS.overrides);
+  localStorage.removeItem(LS_KEYS.cats);
+}
+
+async function logout() {
+  Storage.mode = 'local';
+  Storage.userId = null;
+  currentUser = null;
+  localStorage.removeItem(LS_KEYS.authUser);
   filter = 'all';
   editingTaskId = null;
   categoryEditMode = false;
   editingCategoryKey = null;
-  saveAllData();
+  await loadAllData();
   render();
+  renderAuthSection();
+}
+
+function markSync(ok) {
+  syncErrorMessage = ok ? '' : 'Ошибка синхронизации';
+  // Light-touch: only re-render header to avoid full re-render churn
+  renderAuthSection();
 }
 
 // ============================================================
-// ESCAPING HELPERS
+// ESCAPING
 // ============================================================
 function escapeHtml(s) {
   return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function escapeAttr(s) { return escapeHtml(s); }
 
@@ -1085,6 +1448,25 @@ function populateAddTagSelect() {
   if (preserve && categories[preserve]) sel.value = preserve;
 }
 
+function renderAuthSection() {
+  const el = document.getElementById('auth-section');
+  if (Storage.mode === 'supabase' && currentUser) {
+    const initial = (currentUser.first_name || '?').trim().charAt(0).toUpperCase();
+    const avatar = currentUser.photo_url
+      ? `<img class="auth-avatar" src="${escapeAttr(currentUser.photo_url)}" alt="">`
+      : `<span class="auth-avatar fallback">${escapeHtml(initial)}</span>`;
+    el.innerHTML = `
+      <div class="auth-user">
+        ${avatar}
+        <span class="auth-name">${escapeHtml(currentUser.first_name || 'User')}</span>
+        <button class="auth-logout" onclick="logout()">Выйти</button>
+      </div>
+      ${syncErrorMessage ? `<span class="sync-badge error">${escapeHtml(syncErrorMessage)}</span>` : ''}`;
+  } else {
+    el.innerHTML = `<button class="auth-login-btn" onclick="showLoginModal()">Войти через Telegram</button>`;
+  }
+}
+
 function renderToolbar() {
   const all = getAllEffectiveTasks();
   const archiveCount = all.filter(t => isArchivable(t)).length;
@@ -1100,9 +1482,7 @@ function renderToolbar() {
       <span>Архив</span><span>· ${archiveCount}</span>
     </button>`;
   }
-  html += `<button class="toolbar-btn display"
-    onclick="toggleDisplayMode()"
-    title="Переключить на: ${dmNext}">
+  html += `<button class="toolbar-btn display" onclick="toggleDisplayMode()" title="Переключить на: ${dmNext}">
     <span class="tb-icon">${dmIcon}</span><span>${dmLabel}</span>
   </button>`;
   document.getElementById('toolbar').innerHTML = html;
@@ -1115,7 +1495,6 @@ function renderStats(scoped) {
   const urgentLeft = scoped.filter(t => t._urgent && !checked[t.id]).length;
   const scopeLabel = filter === 'all' ? 'все направления' : (categories[filter] || {}).label || filter;
   const barHex     = filter === 'all' ? 'var(--accent)' : catColor(filter).hex;
-
   document.getElementById('stats').innerHTML = `
     <div class="stat">
       <div class="stat-label">Прогресс</div>
@@ -1178,34 +1557,34 @@ function renderTaskCard(t, isArchivedDisplay) {
     const hasReal   = !!t.deadline && t.deadline !== '—';
     const dispText  = iso ? russianFromIso(iso) : (hasReal ? t.deadline : 'Дедлайн');
     const dispEmpty = !iso && !hasReal;
-    return `<div class="task editing" data-id="${t.id}">
+    return `<div class="task editing" data-id="${escapeAttr(t.id)}">
       <div class="task-edit-form" onclick="event.stopPropagation()">
-        <input class="edit-field" id="te-text-${t.id}" type="text" value="${escapeAttr(t.text)}" placeholder="Задача"
-               onkeydown="if(event.key==='Enter')saveTaskEdit(${t.id});if(event.key==='Escape')cancelTaskEdit()">
+        <input class="edit-field" id="te-text-${escapeAttr(t.id)}" type="text" value="${escapeAttr(t.text)}" placeholder="Задача"
+               onkeydown="if(event.key==='Enter')saveTaskEdit('${escapeAttr(t.id)}');if(event.key==='Escape')cancelTaskEdit()">
         <div class="edit-row">
-          <div class="date-picker" id="te-deadline-wrap-${t.id}" data-original="${escapeAttr(t.deadline || '')}">
-            <span class="date-display${dispEmpty ? ' empty' : ''}" id="te-deadline-disp-${t.id}">${escapeHtml(dispText)}</span>
+          <div class="date-picker" id="te-deadline-wrap-${escapeAttr(t.id)}" data-original="${escapeAttr(t.deadline || '')}">
+            <span class="date-display${dispEmpty ? ' empty' : ''}" id="te-deadline-disp-${escapeAttr(t.id)}">${escapeHtml(dispText)}</span>
             <svg class="date-cal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <input type="date" class="date-native" id="te-deadline-native-${t.id}" value="${iso}" onchange="onEditDateChange(${t.id})">
+            <input type="date" class="date-native" id="te-deadline-native-${escapeAttr(t.id)}" value="${iso}" onchange="onEditDateChange('${escapeAttr(t.id)}')">
           </div>
-          <select class="edit-field" id="te-tag-${t.id}"
-                  onmousedown="this.dataset.prev=this.value" onchange="onEditTagChange(${t.id})">
+          <select class="edit-field" id="te-tag-${escapeAttr(t.id)}"
+                  onmousedown="this.dataset.prev=this.value" onchange="onEditTagChange('${escapeAttr(t.id)}')">
             ${buildCategoryOptionsHtml(t.tag)}
           </select>
         </div>
         <label class="edit-urgent">
-          <input type="checkbox" id="te-urgent-${t.id}"${t.manualUrgent ? ' checked' : ''}>
+          <input type="checkbox" id="te-urgent-${escapeAttr(t.id)}"${t.manualUrgent ? ' checked' : ''}>
           Срочно (вручную)
         </label>
         <div class="edit-actions">
-          <button class="btn-edit-save" onclick="saveTaskEdit(${t.id})">Сохранить</button>
-          <button class="btn-edit-delete" onclick="confirmDeleteTask(${t.id})">Удалить</button>
+          <button class="btn-edit-save" onclick="saveTaskEdit('${escapeAttr(t.id)}')">Сохранить</button>
+          <button class="btn-edit-delete" onclick="confirmDeleteTask('${escapeAttr(t.id)}')">Удалить</button>
         </div>
       </div>
     </div>`;
   }
 
-  return `<div class="task${isDone ? ' done' : ''}${showUrgent ? ' urgent' : ''}${isArchivedDisplay ? ' archived' : ''}" onclick="toggle(${t.id})">
+  return `<div class="task${isDone ? ' done' : ''}${showUrgent ? ' urgent' : ''}${isArchivedDisplay ? ' archived' : ''}" onclick="toggle('${escapeAttr(t.id)}')">
     <div class="checkbox">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
@@ -1219,7 +1598,7 @@ function renderTaskCard(t, isArchivedDisplay) {
           : `<span class="deadline">${escapeHtml(formatDeadline(t.deadline))}</span>`}
       </div>
     </div>
-    <button class="task-edit-trigger" onclick="event.stopPropagation();startTaskEdit(${t.id})" title="Редактировать">✎</button>
+    <button class="task-edit-trigger" onclick="event.stopPropagation();startTaskEdit('${escapeAttr(t.id)}')" title="Редактировать">✎</button>
   </div>`;
 }
 
@@ -1248,7 +1627,6 @@ function renderTasks(scopedActive, scopedArchived) {
       : 'Нет задач в этой категории';
     html += `<div class="empty-state">${note}</div>`;
   }
-
   if (showArchive && scopedArchived.length) {
     const sorted = scopedArchived.slice().sort((a, b) => taskDateSortKey(b) - taskDateSortKey(a));
     html += `<div class="archive-section">
@@ -1256,12 +1634,12 @@ function renderTasks(scopedActive, scopedArchived) {
     sorted.forEach(t => { html += renderTaskCard(t, true); });
     html += `</div>`;
   }
-
   document.getElementById('tasks').innerHTML = html;
 }
 
 function render() {
   populateAddTagSelect();
+  renderAuthSection();
   renderToolbar();
 
   const all = getAllEffectiveTasks().map(t => ({
@@ -1289,15 +1667,14 @@ function render() {
 }
 
 // ============================================================
-// GLOBAL DISMISS HANDLERS (Escape, click outside)
+// GLOBAL DISMISS HANDLERS
 // ============================================================
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (editingTaskId != null)        { cancelTaskEdit(); return; }
-  if (editingCategoryKey != null)   { cancelCatRename(); return; }
-  if (categoryEditMode)             { toggleCategoryEditMode(); }
+  if (editingTaskId != null)      { cancelTaskEdit(); return; }
+  if (editingCategoryKey != null) { cancelCatRename(); return; }
+  if (categoryEditMode)           { toggleCategoryEditMode(); }
 });
-
 document.addEventListener('click', (e) => {
   if (editingTaskId == null) return;
   const inForm    = e.target.closest('.task-edit-form');
@@ -1307,10 +1684,25 @@ document.addEventListener('click', (e) => {
 });
 
 // ============================================================
-// INIT
+// INIT — restore auth state from localStorage, then load data
 // ============================================================
-loadAllData();
-render();
+async function init() {
+  const stored = localStorage.getItem(LS_KEYS.authUser);
+  if (stored) {
+    try {
+      const u = JSON.parse(stored);
+      if (u && u.id) {
+        currentUser    = u;
+        Storage.mode   = 'supabase';
+        Storage.userId = u.id;
+      }
+    } catch (e) { /* ignore */ }
+  }
+  await loadAllData();
+  render();
+  renderAuthSection();
+}
+init();
 </script>
 </body>
 </html>
