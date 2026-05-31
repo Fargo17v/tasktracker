@@ -1175,31 +1175,11 @@ function showLoginModal() {
 
 function closeLoginModal() { document.getElementById('modal-root').innerHTML = ''; }
 
-function mountTelegramWidget() {
-  const container = document.getElementById('tg-widget-container');
-  if (!container) return;
-  container.innerHTML = '';
-  if (TELEGRAM_BOT_USERNAME === 'YOUR_BOT_USERNAME') {
-    container.innerHTML = `<div style="color:var(--urgent);font-family:var(--mono);font-size:0.72rem;text-align:center">
-      Сначала укажите имя бота в TELEGRAM_BOT_USERNAME (в коде).
-    </div>`;
-    return;
-  }
-  // Redirect-mode auth: when the user taps the Telegram button below,
-  // the whole window navigates to Telegram OAuth, then Telegram redirects
-  // back to data-auth-url (our /api/auth GET handler) with the payload
-  // as query params, which then 302-redirects to `/?token=<jwt>`.
-  // We harvest the token from the URL in init() on page load.
-  const script = document.createElement('script');
-  script.async = true;
-  script.src = 'https://telegram.org/js/telegram-widget.js?22';
-  script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
-  script.setAttribute('data-size', 'medium');
-  script.setAttribute('data-auth-url', window.location.origin + '/api/auth');
-  script.setAttribute('data-request-access', 'write');
-  container.appendChild(script);
-  const btn = document.getElementById('connectTgBtn');
-  if (btn) btn.style.display = 'none';
+function mountTelegramWidget(container) {
+  // Skip the JS widget entirely. /api/telegram-login redirects to
+  // oauth.telegram.org, which on success redirects to /api/auth, which
+  // verifies the payload server-side and redirects back to /?token=…
+  window.location.href = '/api/telegram-login';
 }
 
 async function migrateLocalToApi(snap) {
