@@ -1,0 +1,13 @@
+{
+  "name": "task-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Single-file task tracker with Telegram auth via Vercel serverless functions",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
