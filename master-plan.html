@@ -438,7 +438,23 @@ select.edit-field { cursor: pointer; }
 // ============================================================
 const SUPABASE_URL  = 'https://xulpgnrosspmbcevzgwl.supabase.co';
 const SUPABASE_KEY  = 'sb_publishable_LkFMJwQhgMwNfj2cf_CzpQ_0hm33iNM';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Defensive init: the CDN script may have failed to load (no network,
+// file:// origin, blocked CDN). Guest mode must keep working in that
+// case, so we never let a missing SDK throw at the top level.
+// NOTE: the @supabase/supabase-js UMD bundle creates a global `supabase`
+// at script scope. Using `let supabase` here would clash and throw a
+// SyntaxError at parse time, so we use `sb` for our local client.
+let sb = null;
+try {
+  if (window.supabase && typeof window.supabase.createClient === 'function') {
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  } else {
+    console.warn('Supabase SDK not loaded — running in local-only mode.');
+  }
+} catch (e) {
+  console.error('Supabase client init failed:', e);
+  sb = null;
+}
 
 // REPLACE THIS with your bot's username (no @) after creating it in BotFather.
 const TELEGRAM_BOT_USERNAME = 'tasktrackerbyfargobot';
@@ -529,8 +545,8 @@ const Storage = {
   async loadEverything() {
     if (this.mode === 'supabase') {
       const [tRes, cRes] = await Promise.all([
-        supabase.from('tasks').select('*').eq('user_id', this.userId),
-        supabase.from('categories').select('*').eq('user_id', this.userId),
+        sb.from('tasks').select('*').eq('user_id', this.userId),
+        sb.from('categories').select('*').eq('user_id', this.userId),
       ]);
       if (tRes.error) throw tRes.error;
       if (cRes.error) throw cRes.error;
@@ -570,7 +586,7 @@ const Storage = {
         done: !!done,
         updated_at: new Date().toISOString(),
       };
-      const { error } = await supabase.from('tasks').upsert(row);
+      const { error } = await sb.from('tasks').upsert(row);
       if (error) throw error;
     } else {
       writeJSON(LS_KEYS.tasks, customTasks);
@@ -579,7 +595,7 @@ const Storage = {
   },
   async deleteTaskById(id) {
     if (this.mode === 'supabase') {
-      const { error } = await supabase.from('tasks').delete()
+      const { error } = await sb.from('tasks').delete()
         .eq('id', id).eq('user_id', this.userId);
       if (error) throw error;
     } else {
@@ -591,7 +607,7 @@ const Storage = {
   },
   async setTaskDone(id, done) {
     if (this.mode === 'supabase') {
-      const { error } = await supabase.from('tasks')
+      const { error } = await sb.from('tasks')
         .update({ done, updated_at: new Date().toISOString() })
         .eq('id', id).eq('user_id', this.userId);
       if (error) throw error;
@@ -603,14 +619,14 @@ const Storage = {
   // --- Per-category ops ---
   async upsertCategory(key, cat) {
     if (this.mode === 'supabase') {
-      const { data: existing } = await supabase.from('categories')
+      const { data: existing } = await sb.from('categories')
         .select('id').eq('user_id', this.userId).eq('key', key).maybeSingle();
       const payload = {
         ...(existing ? { id: existing.id } : {}),
         user_id: this.userId, key,
         label: cat.label, color_id: cat.colorId,
       };
-      const { error } = await supabase.from('categories').upsert(payload);
+      const { error } = await sb.from('categories').upsert(payload);
       if (error) throw error;
     } else {
       writeJSON(LS_KEYS.cats, categories);
@@ -618,9 +634,9 @@ const Storage = {
   },
   async deleteCategoryByKey(key) {
     if (this.mode === 'supabase') {
-      await supabase.from('tasks').delete()
+      await sb.from('tasks').delete()
         .eq('user_id', this.userId).eq('tag', key);
-      const { error } = await supabase.from('categories').delete()
+      const { error } = await sb.from('categories').delete()
         .eq('user_id', this.userId).eq('key', key);
       if (error) throw error;
     } else {
@@ -645,21 +661,21 @@ const Storage = {
   // --- Reset (full wipe for current user) ---
   async resetAllRemote() {
     if (this.mode !== 'supabase') return;
-    await supabase.from('tasks').delete().eq('user_id', this.userId);
-    await supabase.from('categories').delete().eq('user_id', this.userId);
+    await sb.from('tasks').delete().eq('user_id', this.userId);
+    await sb.from('categories').delete().eq('user_id', this.userId);
   },
 
   // --- Bulk insert (used by migration) ---
   async bulkInsertTasks(rows) {
     if (this.mode !== 'supabase') return;
     if (!rows.length) return;
-    const { error } = await supabase.from('tasks').insert(rows);
+    const { error } = await sb.from('tasks').insert(rows);
     if (error) throw error;
   },
   async bulkInsertCategories(rows) {
     if (this.mode !== 'supabase') return;
     if (!rows.length) return;
-    const { error } = await supabase.from('categories').insert(rows);
+    const { error } = await sb.from('categories').insert(rows);
     if (error) throw error;
   },
 
@@ -1205,7 +1221,7 @@ async function resetProgress() {
   render();
   try {
     if (Storage.mode === 'supabase') {
-      await supabase.from('tasks').update({ done: false }).eq('user_id', Storage.userId);
+      await sb.from('tasks').update({ done: false }).eq('user_id', Storage.userId);
     } else {
       writeJSON(LS_KEYS.checked, checked);
     }
@@ -1268,6 +1284,12 @@ function mountTelegramWidget() {
   const container = document.getElementById('tg-widget-container');
   if (!container) return;
   container.innerHTML = '';
+  if (!sb) {
+    container.innerHTML = `<div style="color:var(--urgent);font-family:var(--mono);font-size:0.72rem;text-align:center">
+      Supabase SDK не загружен. Проверьте подключение к интернету.
+    </div>`;
+    return;
+  }
   if (TELEGRAM_BOT_USERNAME === 'YOUR_BOT_USERNAME') {
     container.innerHTML = `<div style="color:var(--urgent);font-family:var(--mono);font-size:0.72rem;text-align:center">
       Сначала укажите имя бота в TELEGRAM_BOT_USERNAME (в коде).
@@ -1293,8 +1315,12 @@ async function onTelegramAuth(user) {
   // server we trust the widget's client-side data; this is fine for a
   // personal tracker but not for sensitive multi-user data.
   closeLoginModal();
+  if (!sb) {
+    alert('Supabase SDK не загружен. Проверьте подключение к интернету и обновите страницу.');
+    return;
+  }
   try {
-    await supabase.from('users').upsert({
+    await sb.from('users').upsert({
       id: user.id,
       username: user.username || null,
       first_name: user.first_name || null,
@@ -1687,8 +1713,10 @@ document.addEventListener('click', (e) => {
 // INIT — restore auth state from localStorage, then load data
 // ============================================================
 async function init() {
+  // Only honor stored auth if the SDK is actually available;
+  // otherwise stay in local mode so the app remains usable.
   const stored = localStorage.getItem(LS_KEYS.authUser);
-  if (stored) {
+  if (stored && sb) {
     try {
       const u = JSON.parse(stored);
       if (u && u.id) {
@@ -1698,11 +1726,34 @@ async function init() {
       }
     } catch (e) { /* ignore */ }
   }
-  await loadAllData();
+  try {
+    await loadAllData();
+  } catch (e) {
+    console.error('loadAllData failed (forcing local mode):', e);
+    Storage.mode = 'local';
+    Storage.userId = null;
+    currentUser = null;
+    try { await loadAllData(); } catch (e2) { console.error('local load also failed:', e2); }
+  }
   render();
   renderAuthSection();
 }
-init();
+
+init().catch(e => {
+  console.error('init() crashed:', e);
+  // Last-resort recovery: seed defaults and render, so the page is never blank.
+  try {
+    categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+    customTasks = [];
+    checked = {};
+    deletedDefaults = {};
+    defaultOverrides = {};
+    render();
+    renderAuthSection();
+  } catch (e2) {
+    console.error('Last-resort render also failed:', e2);
+  }
+});
 </script>
 </body>
 </html>
