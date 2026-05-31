@@ -705,7 +705,25 @@ const RU_MONTH_PREFIXES = [
 function parseRussianDate(s) {
   if (!s) return null;
   const str = String(s).toLowerCase().trim();
-  const m = str.match(/^(\d{1,2})\s+([а-яё]+)$/);
+  // Try "DD месяц YYYY" first (explicit year — used whenever the date is
+  // not in the current year, so a date-picker selection round-trips
+  // without losing the year).
+  let m = str.match(/^(\d{1,2})\s+([а-яё]+)\s+(\d{4})$/);
+  if (m) {
+    const day  = parseInt(m[1], 10);
+    const year = parseInt(m[3], 10);
+    const word = m[2];
+    if (day < 1 || day > 31) return null;
+    let month = null;
+    for (const [prefix, num] of RU_MONTH_PREFIXES) {
+      if (word.startsWith(prefix)) { month = num; break; }
+    }
+    if (!month) return null;
+    return new Date(year, month - 1, day);
+  }
+  // Fall back to "DD месяц" — same-year shorthand. Year is inferred from
+  // today; if the resulting date is far in the past, assume next year.
+  m = str.match(/^(\d{1,2})\s+([а-яё]+)$/);
   if (!m) return null;
   const day = parseInt(m[1], 10);
   if (day < 1 || day > 31) return null;
@@ -760,7 +778,11 @@ function russianFromIso(iso) {
   if (parts.length !== 3) return '';
   const [y, m, d] = parts.map(Number);
   if (!y || !m || !d || m < 1 || m > 12) return '';
-  return `${d} ${RU_MONTH_GENITIVE[m - 1]}`;
+  const base = `${d} ${RU_MONTH_GENITIVE[m - 1]}`;
+  // Same-year dates use the short form. Any other year is encoded
+  // explicitly so the year survives the round-trip through storage.
+  const currentYear = new Date().getFullYear();
+  return y === currentYear ? base : `${base} ${y}`;
 }
 
 function isoFromRussian(deadline) {
@@ -1531,7 +1553,9 @@ function renderTasks(scopedActive, scopedArchived) {
     html += `<div class="empty-state">Нет задач в этой категории</div>`;
   }
   if (showArchive && scopedArchived.length) {
-    const sorted = scopedArchived.slice().sort((a, b) => taskDateSortKey(b) - taskDateSortKey(a));
+    // Same chronological order as the active list: nearest deadline first,
+    // unparseable deadlines last.
+    const sorted = scopedArchived.slice().sort((a, b) => taskDateSortKey(a) - taskDateSortKey(b));
     html += `<div class="archive-section">
       <div class="archive-header"><span>Архив</span><span>${sorted.length}</span></div>`;
     sorted.forEach(t => { html += renderTaskCard(t, true); });
