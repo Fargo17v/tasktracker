@@ -64,6 +64,14 @@ function verifyTelegramHash(payload) {
 //   { ok: true,  token, user }                        on success
 //   { ok: false, status, errorCode, errorMessage }    on failure
 async function performAuth(payload) {
+  console.log('=== AUTH DEBUG ===');
+  console.log('BOT_TOKEN exists:', !!BOT_TOKEN);
+  console.log('BOT_TOKEN length:', BOT_TOKEN ? BOT_TOKEN.length : 0);
+  console.log('payload:', JSON.stringify(payload));
+  console.log('verifyHash result:', verifyTelegramHash(payload));
+  const age = Date.now() / 1000 - parseInt(payload.auth_date, 10);
+  console.log('auth_date age seconds:', age);
+
   if (!BOT_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_KEY || !JWT_SECRET) {
     return { ok: false, status: 500, errorCode: 'server', errorMessage: 'Server not configured: missing env vars' };
   }
