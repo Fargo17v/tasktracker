@@ -79,9 +79,40 @@ header {
   font-size: 0.85rem; color: var(--text-dim);
   margin-bottom: 1.25rem; line-height: 1.5;
 }
-.tg-widget-container {
-  display: flex; justify-content: center;
-  margin: 0 0 1rem; min-height: 8px;
+/* === login/register modal === */
+.auth-tabs {
+  display: flex; gap: 4px; margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.auth-tab {
+  flex: 1; padding: 9px 8px; background: transparent; border: none;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  font-family: var(--mono); font-size: 0.78rem; color: var(--text-dim);
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.auth-tab:hover { color: var(--text); }
+.auth-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.auth-form label {
+  font-size: 0.72rem; color: var(--text-dim);
+  display: block; margin: 0 0 4px; font-family: var(--mono);
+}
+.auth-form input[type="text"],
+.auth-form input[type="password"] {
+  width: 100%; background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; color: var(--text);
+  font-family: var(--font); font-size: 0.88rem; outline: none;
+  margin-bottom: 0.85rem; transition: border-color 0.15s;
+}
+.auth-form input[type="text"]:focus,
+.auth-form input[type="password"]:focus { border-color: var(--accent); }
+.auth-error {
+  font-size: 0.78rem; color: var(--urgent);
+  background: var(--urgent-bg);
+  border: 1px solid rgba(240,68,56,0.25);
+  border-radius: 6px;
+  padding: 8px 10px; margin-bottom: 0.85rem;
+  font-family: var(--font);
+  animation: fadeSection 0.15s ease-out;
 }
 .sync-badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -434,9 +465,6 @@ select.edit-field { cursor: pointer; }
 // Guest mode uses localStorage and makes ZERO network calls.
 // ============================================================
 
-// REPLACE THIS with your bot's username (no @) after creating it in BotFather.
-const TELEGRAM_BOT_USERNAME = 'tasktrackerbyfargobot';
-
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -471,7 +499,7 @@ const LS_KEYS = {
 // STORAGE — dual-mode async abstraction (localStorage | /api/*)
 // UI never touches localStorage or the network directly. Guest
 // mode is the default and works fully offline; "api" mode kicks
-// in once /api/auth has returned a JWT.
+// in once /api/login or /api/register has returned a JWT.
 // ============================================================
 function readJSON(key, fallback) {
   try {
@@ -626,6 +654,9 @@ const Storage = {
     await this._fetch('/api/categories', { method: 'POST', body: JSON.stringify(rows) });
   },
 
+  // --- Local-only inspection (used by the migration prompt) ---
+  _getLocalTasks() { return readJSON(LS_KEYS.tasks, []); },
+
   // --- Device preferences (always localStorage) ---
   async getDisplayMode()       { return readJSON(LS_KEYS.display, 'date'); },
   async saveDisplayMode(v)     { writeJSON(LS_KEYS.display, v); },
@@ -646,7 +677,7 @@ let editingTaskId = null;
 let categoryEditMode = false;
 let editingCategoryKey = null;
 let catModalSuccessCb = null;
-let currentUser = null;     // Telegram user object when authenticated
+let currentUser = null;     // { id, username } when authenticated, else null
 let syncErrorMessage = '';  // shows in header if sync to /api/* fails
 
 // ============================================================
@@ -1155,36 +1186,153 @@ async function toggleDisplayMode() {
 
 
 // ============================================================
-// AUTH — Telegram login + Supabase user sync
+// AUTH — username/password login + register
 // ============================================================
-function showLoginModal() {
+let loginModalTab = 'login'; // 'login' | 'register'
+
+function showLoginModal(tab) {
+  loginModalTab = tab === 'register' ? 'register' : 'login';
+  renderLoginModal('');
+  setTimeout(() => {
+    const el = document.getElementById('authUsername');
+    if (el) el.focus();
+  }, 50);
+}
+
+function closeLoginModal() {
+  document.getElementById('modal-root').innerHTML = '';
+}
+
+function switchLoginTab(tab) {
+  if (loginModalTab === tab) return;
+  loginModalTab = tab;
+  renderLoginModal('');
+  setTimeout(() => {
+    const el = document.getElementById('authUsername');
+    if (el) el.focus();
+  }, 0);
+}
+
+function renderLoginModal(errorMsg) {
+  const isRegister = loginModalTab === 'register';
   const root = document.getElementById('modal-root');
   root.innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)closeLoginModal()">
       <div class="modal">
-        <h3>Войти через Telegram</h3>
-        <p class="modal-text">Авторизация через Telegram позволяет синхронизировать задачи между устройствами.</p>
-        <div id="tg-widget-container" class="tg-widget-container"></div>
-        <div class="modal-btns">
-          <button class="cancel" onclick="closeLoginModal()">Отмена</button>
-          <button class="confirm" id="connectTgBtn" onclick="mountTelegramWidget()">Подключить Telegram</button>
+        <div class="auth-tabs" role="tablist">
+          <button class="auth-tab${!isRegister ? ' active' : ''}" onclick="switchLoginTab('login')">Войти</button>
+          <button class="auth-tab${isRegister ? ' active' : ''}" onclick="switchLoginTab('register')">Регистрация</button>
         </div>
+        <form class="auth-form" onsubmit="event.preventDefault();submitAuthForm()">
+          <label>Имя пользователя</label>
+          <input type="text" id="authUsername" autocomplete="username" autocapitalize="none" autocorrect="off">
+          <label>Пароль</label>
+          <input type="password" id="authPassword" autocomplete="${isRegister ? 'new-password' : 'current-password'}">
+          ${isRegister ? `
+            <label>Повторите пароль</label>
+            <input type="password" id="authPassword2" autocomplete="new-password">
+          ` : ''}
+          ${errorMsg ? `<div class="auth-error">${escapeHtml(errorMsg)}</div>` : ''}
+          <div class="modal-btns">
+            <button type="button" class="cancel" onclick="closeLoginModal()">Отмена</button>
+            <button type="submit" class="confirm">${isRegister ? 'Зарегистрироваться' : 'Войти'}</button>
+          </div>
+        </form>
       </div>
     </div>`;
 }
 
-function closeLoginModal() { document.getElementById('modal-root').innerHTML = ''; }
-
-function mountTelegramWidget(container) {
-  // Skip the JS widget entirely. /api/telegram-login redirects to
-  // oauth.telegram.org, which on success redirects to /api/auth, which
-  // verifies the payload server-side and redirects back to /?token=…
-  window.location.href = '/api/telegram-login';
+async function submitAuthForm() {
+  const usernameEl = document.getElementById('authUsername');
+  const passwordEl = document.getElementById('authPassword');
+  if (!usernameEl || !passwordEl) return;
+  const username = usernameEl.value.trim();
+  const password = passwordEl.value;
+  if (!username || !password) {
+    renderLoginModal('Введите имя пользователя и пароль');
+    return;
+  }
+  if (loginModalTab === 'register') {
+    const pw2El = document.getElementById('authPassword2');
+    const password2 = pw2El ? pw2El.value : '';
+    if (password !== password2) {
+      renderLoginModal('Пароли не совпадают');
+      return;
+    }
+    if (password.length < 6) {
+      renderLoginModal('Пароль должен быть не короче 6 символов');
+      return;
+    }
+    try {
+      const { token, user } = await register(username, password);
+      await handleAuthSuccess(token, user);
+    } catch (e) {
+      renderLoginModal(e.message || 'Не удалось зарегистрироваться');
+    }
+    return;
+  }
+  // Login tab
+  try {
+    const { token, user } = await login(username, password);
+    await handleAuthSuccess(token, user);
+  } catch (e) {
+    renderLoginModal(e.message || 'Не удалось войти');
+  }
 }
 
-async function migrateLocalToApi(snap) {
-  // Server derives user_id from the JWT and generates UUIDs.
-  const tasksToInsert = (snap.localTasks || []).map(t => {
+async function login(username, password) {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+async function register(username, password) {
+  const res = await fetch('/api/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+async function handleAuthSuccess(token, user) {
+  localStorage.setItem(LS_KEYS.token, token);
+  localStorage.setItem(LS_KEYS.authUser, JSON.stringify(user));
+  Storage.mode = 'api';
+  Storage.token = token;
+  currentUser = user;
+  closeLoginModal();
+
+  // Offer migration if local guest data exists
+  const localTasks = Storage._getLocalTasks();
+  if (localTasks.length > 0) {
+    if (confirm('Перенести локальные задачи в аккаунт?')) {
+      try { await migrateLocalToApi(); }
+      catch (e) {
+        console.error('Migration failed', e);
+        alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
+      }
+    }
+  }
+  try { await loadAllData(); }
+  catch (e) { console.error('Initial load after auth failed:', e); }
+  render();
+  renderAuthSection();
+}
+
+async function migrateLocalToApi() {
+  const localTasks   = readJSON(LS_KEYS.tasks, []);
+  const localChecked = readJSON(LS_KEYS.checked, {});
+  const localCats    = readJSON(LS_KEYS.cats, null);
+
+  const tasksToInsert = (localTasks || []).map(t => {
     const deadline = t.deadline || '—';
     return {
       text: t.text, tag: t.tag,
@@ -1192,16 +1340,16 @@ async function migrateLocalToApi(snap) {
       deadline_date: isoFromRussian(deadline) || null,
       month: monthOf(deadline),
       urgent: !!(t.manualUrgent ?? t.urgent ?? false),
-      done:   !!snap.localChecked[t.id],
+      done:   !!localChecked[t.id],
       archived: !!t.archived,
     };
   });
 
-  const catsToInsert = Object.entries(snap.localCats || {}).map(([key, v]) => ({
+  const catsToInsert = Object.entries(localCats || {}).map(([key, v]) => ({
     key, label: v.label, color_id: v.colorId,
   }));
 
-  if (catsToInsert.length) await Storage.bulkInsertCategories(catsToInsert);
+  if (catsToInsert.length)  await Storage.bulkInsertCategories(catsToInsert);
   if (tasksToInsert.length) await Storage.bulkInsertTasks(tasksToInsert);
 
   // Clear localStorage data keys (keep device prefs like display mode)
@@ -1263,19 +1411,17 @@ function populateAddTagSelect() {
 function renderAuthSection() {
   const el = document.getElementById('auth-section');
   if (Storage.mode === 'api' && currentUser) {
-    const initial = (currentUser.first_name || '?').trim().charAt(0).toUpperCase();
-    const avatar = currentUser.photo_url
-      ? `<img class="auth-avatar" src="${escapeAttr(currentUser.photo_url)}" alt="">`
-      : `<span class="auth-avatar fallback">${escapeHtml(initial)}</span>`;
+    const displayName = currentUser.username || 'User';
+    const initial = displayName.trim().charAt(0).toUpperCase() || '?';
     el.innerHTML = `
       <div class="auth-user">
-        ${avatar}
-        <span class="auth-name">${escapeHtml(currentUser.first_name || 'User')}</span>
+        <span class="auth-avatar fallback">${escapeHtml(initial)}</span>
+        <span class="auth-name">${escapeHtml(displayName)}</span>
         <button class="auth-logout" onclick="logout()">Выйти</button>
       </div>
       ${syncErrorMessage ? `<span class="sync-badge error">${escapeHtml(syncErrorMessage)}</span>` : ''}`;
   } else {
-    el.innerHTML = `<button class="auth-login-btn" onclick="showLoginModal()">Войти через Telegram</button>`;
+    el.innerHTML = `<button class="auth-login-btn" onclick="showLoginModal()">Войти</button>`;
   }
 }
 
@@ -1506,111 +1652,22 @@ document.addEventListener('click', (e) => {
 });
 
 // ============================================================
-// INIT — handle redirect-mode auth callback, then load data
+// INIT — restore saved auth from localStorage, then load data
 // ============================================================
-
-// Auth error codes returned from /api/auth → /?auth_error=…
-const AUTH_ERROR_MESSAGES = {
-  invalid: 'Не удалось проверить подпись Telegram. Попробуйте ещё раз.',
-  stale:   'Срок действия данных авторизации истёк. Попробуйте ещё раз.',
-  server:  'Серверная ошибка авторизации. Попробуйте позже.',
-};
-
-function decodeUserParam(b64) {
-  if (!b64) return null;
-  try {
-    // atob may receive URL-safe base64 from server; normalise both alphabets.
-    const normalised = b64.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalised + '==='.slice((normalised.length + 3) % 4);
-    return JSON.parse(decodeURIComponent(escape(atob(padded))));
-  } catch (e) {
-    try { return JSON.parse(atob(b64)); }
-    catch (e2) { console.error('Could not decode user param:', e2); return null; }
-  }
-}
-
-function stripAuthParamsFromUrl() {
-  // Drop ?token, ?user, ?auth_error from the address bar so a reload
-  // doesn't re-run the auth-arrival branch.
-  const url = new URL(window.location.href);
-  ['token', 'user', 'auth_error'].forEach(k => url.searchParams.delete(k));
-  const qs = url.searchParams.toString();
-  const newPath = url.pathname + (qs ? '?' + qs : '') + url.hash;
-  history.replaceState({}, document.title, newPath);
-}
-
-async function handleAuthRedirectArrival(tokenFromUrl, userFromUrl) {
-  // We just returned from Telegram OAuth via /api/auth's 302.
-  const serverUser = decodeUserParam(userFromUrl) || { id: null };
-
-  // Snapshot any pre-auth guest data BEFORE switching modes / clearing URL.
-  const localTasksLs   = readJSON(LS_KEYS.tasks, []);
-  const localCheckedLs = readJSON(LS_KEYS.checked, {});
-  const localCatsLs    = readJSON(LS_KEYS.cats, null);
-  const hasLocalData =
-    (localTasksLs && localTasksLs.length > 0) ||
-    (localCatsLs && Object.keys(localCatsLs || {}).length > 0);
-
-  Storage.mode  = 'api';
-  Storage.token = tokenFromUrl;
-  currentUser   = serverUser;
-  localStorage.setItem(LS_KEYS.token, tokenFromUrl);
-  localStorage.setItem(LS_KEYS.authUser, JSON.stringify(serverUser));
-
-  // Remove auth params from the URL before any await — if the user reloads
-  // mid-flow we don't want the token to be re-harvested or leaked further.
-  stripAuthParamsFromUrl();
-
-  if (hasLocalData) {
-    const doMigrate = confirm('Перенести задачи в облако?');
-    if (doMigrate) {
-      try {
-        await migrateLocalToApi({
-          localTasks: localTasksLs,
-          localChecked: localCheckedLs,
-          localCats: localCatsLs,
-        });
-      } catch (e) {
-        console.error('Migration failed', e);
-        alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
-      }
-    }
-  }
-}
-
 async function init() {
-  // 1. Did we just come back from /api/auth's redirect?
-  const params       = new URLSearchParams(window.location.search);
-  const tokenFromUrl = params.get('token');
-  const userFromUrl  = params.get('user');
-  const authError    = params.get('auth_error');
-
-  if (authError) {
-    stripAuthParamsFromUrl();
-    const msg = AUTH_ERROR_MESSAGES[authError] || ('Ошибка авторизации: ' + authError);
-    // Defer alert so it doesn't block the initial render.
-    setTimeout(() => alert(msg), 0);
-  } else if (tokenFromUrl) {
+  // Restore saved auth (token + user) if any. If the token turns out
+  // to be invalid we fall back to local/guest mode below.
+  const storedToken = localStorage.getItem(LS_KEYS.token);
+  const storedUser  = localStorage.getItem(LS_KEYS.authUser);
+  if (storedToken && storedUser) {
     try {
-      await handleAuthRedirectArrival(tokenFromUrl, userFromUrl);
-    } catch (e) {
-      console.error('Failed to process auth redirect:', e);
-      stripAuthParamsFromUrl();
-    }
-  } else {
-    // 2. Normal load — restore saved auth from localStorage if any.
-    const storedToken = localStorage.getItem(LS_KEYS.token);
-    const storedUser  = localStorage.getItem(LS_KEYS.authUser);
-    if (storedToken && storedUser) {
-      try {
-        const u = JSON.parse(storedUser);
-        if (u && u.id) {
-          currentUser   = u;
-          Storage.mode  = 'api';
-          Storage.token = storedToken;
-        }
-      } catch (e) { /* ignore */ }
-    }
+      const u = JSON.parse(storedUser);
+      if (u && u.id) {
+        currentUser   = u;
+        Storage.mode  = 'api';
+        Storage.token = storedToken;
+      }
+    } catch (e) { /* ignore */ }
   }
 
   // 3. Load data and render. If the API rejects us (expired token), fall
