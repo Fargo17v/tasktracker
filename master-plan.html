@@ -1185,107 +1185,22 @@ function mountTelegramWidget() {
     </div>`;
     return;
   }
+  // Redirect-mode auth: when the user taps the Telegram button below,
+  // the whole window navigates to Telegram OAuth, then Telegram redirects
+  // back to data-auth-url (our /api/auth GET handler) with the payload
+  // as query params, which then 302-redirects to `/?token=<jwt>`.
+  // We harvest the token from the URL in init() on page load.
   const script = document.createElement('script');
   script.async = true;
   script.src = 'https://telegram.org/js/telegram-widget.js?22';
   script.setAttribute('data-telegram-login', TELEGRAM_BOT_USERNAME);
   script.setAttribute('data-size', 'medium');
-  script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+  script.setAttribute('data-auth-url', window.location.origin + '/api/auth');
   script.setAttribute('data-request-access', 'write');
   container.appendChild(script);
   const btn = document.getElementById('connectTgBtn');
   if (btn) btn.style.display = 'none';
 }
-
-// Called by the Telegram Login Widget. Must be reachable from the
-// widget's inline handler (data-onauth="onTelegramAuth(user)"), so we
-// also expose it explicitly on `window` below — function declarations
-// inside an inline <script> are normally global, but assigning to
-// window makes the binding robust against bundling / module scoping
-// and gives us a clear "yes, it's there" check from devtools.
-async function onTelegramAuth(user) {
-  console.log('onTelegramAuth called', user);
-  try {
-    // user = { id, first_name, last_name, username, photo_url, auth_date, hash }
-    closeLoginModal();
-
-    let token, serverUser;
-    try {
-      console.log('Sending to /api/auth...');
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(user),
-      });
-      console.log('/api/auth response status:', res.status);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.error('/api/auth returned non-OK:', res.status, err);
-        alert('Не удалось войти: ' + (err.error || ('HTTP ' + res.status)));
-        return;
-      }
-      const data = await res.json();
-      console.log('/api/auth response body:', data);
-      token      = data.token;
-      serverUser = data.user || {
-        id: user.id,
-        first_name: user.first_name || null,
-        username:   user.username   || null,
-        photo_url:  user.photo_url  || null,
-      };
-      if (!token) {
-        alert('Сервер не вернул токен авторизации.');
-        return;
-      }
-    } catch (e) {
-      console.error('Auth request failed', e);
-      alert('Ошибка авторизации: ' + (e.message || e));
-      return;
-    }
-
-    // Snapshot local data before mode switch
-    const localTasksLs   = readJSON(LS_KEYS.tasks, []);
-    const localCheckedLs = readJSON(LS_KEYS.checked, {});
-    const localCatsLs    = readJSON(LS_KEYS.cats, null);
-    const hasLocalData =
-      (localTasksLs && localTasksLs.length > 0) ||
-      (localCatsLs && Object.keys(localCatsLs || {}).length > 0);
-
-    Storage.mode  = 'api';
-    Storage.token = token;
-    currentUser   = serverUser;
-    localStorage.setItem(LS_KEYS.token, token);
-    localStorage.setItem(LS_KEYS.authUser, JSON.stringify(serverUser));
-
-    if (hasLocalData) {
-      const doMigrate = confirm('Перенести задачи в облако?');
-      if (doMigrate) {
-        try {
-          await migrateLocalToApi({
-            localTasks: localTasksLs,
-            localChecked: localCheckedLs,
-            localCats: localCatsLs,
-          });
-        } catch (e) {
-          console.error('Migration failed', e);
-          alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
-        }
-      }
-    }
-
-    try { await loadAllData(); }
-    catch (e) { console.error('Initial load after auth failed:', e); }
-    render();
-    renderAuthSection();
-  } catch (outerErr) {
-    // Catch-all so the widget's caller never sees a swallowed rejection.
-    console.error('onTelegramAuth fatal error:', outerErr);
-    alert('Ошибка авторизации: ' + (outerErr && outerErr.message ? outerErr.message : outerErr));
-  }
-}
-// Expose globally so the inline Telegram widget callback can find us
-// regardless of any future scoping changes (modules, IIFE wrappers, etc).
-window.onTelegramAuth = onTelegramAuth;
 
 async function migrateLocalToApi(snap) {
   // Server derives user_id from the JWT and generates UUIDs.
@@ -1611,23 +1526,115 @@ document.addEventListener('click', (e) => {
 });
 
 // ============================================================
-// INIT — restore auth state from localStorage, then load data
+// INIT — handle redirect-mode auth callback, then load data
 // ============================================================
-async function init() {
-  // Restore saved auth (token + user). If either is missing or the token
-  // turns out to be invalid, fall back to local/guest mode.
-  const storedToken = localStorage.getItem(LS_KEYS.token);
-  const storedUser  = localStorage.getItem(LS_KEYS.authUser);
-  if (storedToken && storedUser) {
-    try {
-      const u = JSON.parse(storedUser);
-      if (u && u.id) {
-        currentUser   = u;
-        Storage.mode  = 'api';
-        Storage.token = storedToken;
-      }
-    } catch (e) { /* ignore */ }
+
+// Auth error codes returned from /api/auth → /?auth_error=…
+const AUTH_ERROR_MESSAGES = {
+  invalid: 'Не удалось проверить подпись Telegram. Попробуйте ещё раз.',
+  stale:   'Срок действия данных авторизации истёк. Попробуйте ещё раз.',
+  server:  'Серверная ошибка авторизации. Попробуйте позже.',
+};
+
+function decodeUserParam(b64) {
+  if (!b64) return null;
+  try {
+    // atob may receive URL-safe base64 from server; normalise both alphabets.
+    const normalised = b64.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalised + '==='.slice((normalised.length + 3) % 4);
+    return JSON.parse(decodeURIComponent(escape(atob(padded))));
+  } catch (e) {
+    try { return JSON.parse(atob(b64)); }
+    catch (e2) { console.error('Could not decode user param:', e2); return null; }
   }
+}
+
+function stripAuthParamsFromUrl() {
+  // Drop ?token, ?user, ?auth_error from the address bar so a reload
+  // doesn't re-run the auth-arrival branch.
+  const url = new URL(window.location.href);
+  ['token', 'user', 'auth_error'].forEach(k => url.searchParams.delete(k));
+  const qs = url.searchParams.toString();
+  const newPath = url.pathname + (qs ? '?' + qs : '') + url.hash;
+  history.replaceState({}, document.title, newPath);
+}
+
+async function handleAuthRedirectArrival(tokenFromUrl, userFromUrl) {
+  // We just returned from Telegram OAuth via /api/auth's 302.
+  const serverUser = decodeUserParam(userFromUrl) || { id: null };
+
+  // Snapshot any pre-auth guest data BEFORE switching modes / clearing URL.
+  const localTasksLs   = readJSON(LS_KEYS.tasks, []);
+  const localCheckedLs = readJSON(LS_KEYS.checked, {});
+  const localCatsLs    = readJSON(LS_KEYS.cats, null);
+  const hasLocalData =
+    (localTasksLs && localTasksLs.length > 0) ||
+    (localCatsLs && Object.keys(localCatsLs || {}).length > 0);
+
+  Storage.mode  = 'api';
+  Storage.token = tokenFromUrl;
+  currentUser   = serverUser;
+  localStorage.setItem(LS_KEYS.token, tokenFromUrl);
+  localStorage.setItem(LS_KEYS.authUser, JSON.stringify(serverUser));
+
+  // Remove auth params from the URL before any await — if the user reloads
+  // mid-flow we don't want the token to be re-harvested or leaked further.
+  stripAuthParamsFromUrl();
+
+  if (hasLocalData) {
+    const doMigrate = confirm('Перенести задачи в облако?');
+    if (doMigrate) {
+      try {
+        await migrateLocalToApi({
+          localTasks: localTasksLs,
+          localChecked: localCheckedLs,
+          localCats: localCatsLs,
+        });
+      } catch (e) {
+        console.error('Migration failed', e);
+        alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
+      }
+    }
+  }
+}
+
+async function init() {
+  // 1. Did we just come back from /api/auth's redirect?
+  const params       = new URLSearchParams(window.location.search);
+  const tokenFromUrl = params.get('token');
+  const userFromUrl  = params.get('user');
+  const authError    = params.get('auth_error');
+
+  if (authError) {
+    stripAuthParamsFromUrl();
+    const msg = AUTH_ERROR_MESSAGES[authError] || ('Ошибка авторизации: ' + authError);
+    // Defer alert so it doesn't block the initial render.
+    setTimeout(() => alert(msg), 0);
+  } else if (tokenFromUrl) {
+    try {
+      await handleAuthRedirectArrival(tokenFromUrl, userFromUrl);
+    } catch (e) {
+      console.error('Failed to process auth redirect:', e);
+      stripAuthParamsFromUrl();
+    }
+  } else {
+    // 2. Normal load — restore saved auth from localStorage if any.
+    const storedToken = localStorage.getItem(LS_KEYS.token);
+    const storedUser  = localStorage.getItem(LS_KEYS.authUser);
+    if (storedToken && storedUser) {
+      try {
+        const u = JSON.parse(storedUser);
+        if (u && u.id) {
+          currentUser   = u;
+          Storage.mode  = 'api';
+          Storage.token = storedToken;
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  // 3. Load data and render. If the API rejects us (expired token), fall
+  //    back to local/guest mode so the app stays usable.
   try {
     await loadAllData();
   } catch (e) {
