@@ -6,7 +6,6 @@
 <title>Task Tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --bg: #0e0e11;
@@ -434,27 +433,10 @@ select.edit-field { cursor: pointer; }
 
 <script>
 // ============================================================
-// SUPABASE CLIENT
+// FRONT-END NEVER TALKS TO SUPABASE DIRECTLY.
+// All authenticated data flows through /api/* serverless functions.
+// Guest mode uses localStorage and makes ZERO network calls.
 // ============================================================
-const SUPABASE_URL  = 'https://xulpgnrosspmbcevzgwl.supabase.co';
-const SUPABASE_KEY  = 'sb_publishable_LkFMJwQhgMwNfj2cf_CzpQ_0hm33iNM';
-// Defensive init: the CDN script may have failed to load (no network,
-// file:// origin, blocked CDN). Guest mode must keep working in that
-// case, so we never let a missing SDK throw at the top level.
-// NOTE: the @supabase/supabase-js UMD bundle creates a global `supabase`
-// at script scope. Using `let supabase` here would clash and throw a
-// SyntaxError at parse time, so we use `sb` for our local client.
-let sb = null;
-try {
-  if (window.supabase && typeof window.supabase.createClient === 'function') {
-    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  } else {
-    console.warn('Supabase SDK not loaded — running in local-only mode.');
-  }
-} catch (e) {
-  console.error('Supabase client init failed:', e);
-  sb = null;
-}
 
 // REPLACE THIS with your bot's username (no @) after creating it in BotFather.
 const TELEGRAM_BOT_USERNAME = 'tasktrackerbyfargobot';
@@ -524,8 +506,10 @@ const LS_KEYS = {
 };
 
 // ============================================================
-// STORAGE — dual-mode async abstraction (localStorage | Supabase)
-// UI never touches localStorage or Supabase directly.
+// STORAGE — dual-mode async abstraction (localStorage | /api/*)
+// UI never touches localStorage or the network directly. Guest
+// mode is the default and works fully offline; "api" mode kicks
+// in once /api/auth has returned a JWT.
 // ============================================================
 function readJSON(key, fallback) {
   try {
@@ -537,28 +521,54 @@ function readJSON(key, fallback) {
 }
 function writeJSON(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 
+class UnauthorizedError extends Error {
+  constructor(msg) { super(msg || 'Unauthorized'); this.unauthorized = true; }
+}
+
 const Storage = {
-  mode: 'local',    // 'local' | 'supabase'
-  userId: null,
+  mode: 'local',  // 'local' | 'api'
+  token: null,
+
+  async _fetch(url, opts = {}) {
+    const headers = Object.assign({}, opts.headers || {});
+    if (this.token) headers['Authorization'] = 'Bearer ' + this.token;
+    if (opts.body && typeof opts.body === 'string' && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+    let res;
+    try {
+      res = await fetch(url, Object.assign({}, opts, { headers }));
+    } catch (networkErr) {
+      const e = new Error('Network error: ' + (networkErr.message || networkErr));
+      e.networkError = true;
+      throw e;
+    }
+    if (res.status === 401) throw new UnauthorizedError();
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error('HTTP ' + res.status + ' ' + url + ': ' + (text || 'request failed'));
+    }
+    return res;
+  },
 
   // --- Bulk fetch (called by loadAllData) ---
   async loadEverything() {
-    if (this.mode === 'supabase') {
+    if (this.mode === 'api') {
       const [tRes, cRes] = await Promise.all([
-        sb.from('tasks').select('*').eq('user_id', this.userId),
-        sb.from('categories').select('*').eq('user_id', this.userId),
+        this._fetch('/api/tasks'),
+        this._fetch('/api/categories'),
       ]);
-      if (tRes.error) throw tRes.error;
-      if (cRes.error) throw cRes.error;
-      const tasks = (tRes.data || []).map(r => ({
+      const taskRows = await tRes.json();
+      const catRows  = await cRes.json();
+      const tasks = (taskRows || []).map(r => ({
         id: r.id, text: r.text, tag: r.tag,
         deadline: r.deadline || '—',
         manualUrgent: !!r.urgent, custom: true,
       }));
       const checked = {};
-      (tRes.data || []).forEach(r => { if (r.done) checked[r.id] = true; });
+      (taskRows || []).forEach(r => { if (r.done) checked[r.id] = true; });
       const categories = {};
-      (cRes.data || []).forEach(r => { categories[r.key] = { label: r.label, colorId: r.color_id }; });
+      (catRows || []).forEach(r => { categories[r.key] = { label: r.label, colorId: r.color_id }; });
       return {
         tasks, checked, categories,
         deletedDefaults: {}, defaultOverrides: {},
@@ -575,29 +585,28 @@ const Storage = {
 
   // --- Per-task ops ---
   async upsertTask(task, done) {
-    if (this.mode === 'supabase') {
-      const row = {
-        id: task.id, user_id: this.userId,
+    if (this.mode === 'api') {
+      const payload = {
+        id: task.id,
         text: task.text, tag: task.tag,
         deadline: task.deadline || null,
         deadline_date: isoFromRussian(task.deadline) || null,
         month: monthOf(task.deadline),
         urgent: !!task.manualUrgent,
         done: !!done,
-        updated_at: new Date().toISOString(),
       };
-      const { error } = await sb.from('tasks').upsert(row);
-      if (error) throw error;
+      await this._fetch('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
     } else {
       writeJSON(LS_KEYS.tasks, customTasks);
       writeJSON(LS_KEYS.checked, checked);
     }
   },
   async deleteTaskById(id) {
-    if (this.mode === 'supabase') {
-      const { error } = await sb.from('tasks').delete()
-        .eq('id', id).eq('user_id', this.userId);
-      if (error) throw error;
+    if (this.mode === 'api') {
+      await this._fetch('/api/tasks?id=' + encodeURIComponent(id), { method: 'DELETE' });
     } else {
       writeJSON(LS_KEYS.tasks, customTasks);
       writeJSON(LS_KEYS.deleted, deletedDefaults);
@@ -606,11 +615,11 @@ const Storage = {
     }
   },
   async setTaskDone(id, done) {
-    if (this.mode === 'supabase') {
-      const { error } = await sb.from('tasks')
-        .update({ done, updated_at: new Date().toISOString() })
-        .eq('id', id).eq('user_id', this.userId);
-      if (error) throw error;
+    if (this.mode === 'api') {
+      await this._fetch('/api/tasks?id=' + encodeURIComponent(id), {
+        method: 'PUT',
+        body: JSON.stringify({ done: !!done }),
+      });
     } else {
       writeJSON(LS_KEYS.checked, checked);
     }
@@ -618,27 +627,18 @@ const Storage = {
 
   // --- Per-category ops ---
   async upsertCategory(key, cat) {
-    if (this.mode === 'supabase') {
-      const { data: existing } = await sb.from('categories')
-        .select('id').eq('user_id', this.userId).eq('key', key).maybeSingle();
-      const payload = {
-        ...(existing ? { id: existing.id } : {}),
-        user_id: this.userId, key,
-        label: cat.label, color_id: cat.colorId,
-      };
-      const { error } = await sb.from('categories').upsert(payload);
-      if (error) throw error;
+    if (this.mode === 'api') {
+      await this._fetch('/api/categories', {
+        method: 'POST',
+        body: JSON.stringify({ key, label: cat.label, color_id: cat.colorId }),
+      });
     } else {
       writeJSON(LS_KEYS.cats, categories);
     }
   },
   async deleteCategoryByKey(key) {
-    if (this.mode === 'supabase') {
-      await sb.from('tasks').delete()
-        .eq('user_id', this.userId).eq('tag', key);
-      const { error } = await sb.from('categories').delete()
-        .eq('user_id', this.userId).eq('key', key);
-      if (error) throw error;
+    if (this.mode === 'api') {
+      await this._fetch('/api/categories?key=' + encodeURIComponent(key), { method: 'DELETE' });
     } else {
       writeJSON(LS_KEYS.cats, categories);
       writeJSON(LS_KEYS.tasks, customTasks);
@@ -648,35 +648,39 @@ const Storage = {
     }
   },
 
-  // --- Defaults-overrides (local-only concept; no-op in Supabase) ---
+  // --- Defaults-overrides (local-only concept; no-op in api mode) ---
   async saveDefaultOverrides() {
-    if (this.mode === 'supabase') return;
+    if (this.mode === 'api') return;
     writeJSON(LS_KEYS.overrides, defaultOverrides);
   },
   async saveDeletedDefaults() {
-    if (this.mode === 'supabase') return;
+    if (this.mode === 'api') return;
     writeJSON(LS_KEYS.deleted, deletedDefaults);
   },
 
-  // --- Reset (full wipe for current user) ---
+  // --- Reset operations (api delegates to server endpoints) ---
   async resetAllRemote() {
-    if (this.mode !== 'supabase') return;
-    await sb.from('tasks').delete().eq('user_id', this.userId);
-    await sb.from('categories').delete().eq('user_id', this.userId);
+    if (this.mode !== 'api') return;
+    await this._fetch('/api/categories', { method: 'DELETE' });
+  },
+  async resetProgressRemote() {
+    if (this.mode !== 'api') return;
+    await this._fetch('/api/tasks', {
+      method: 'PUT',
+      body: JSON.stringify({ done: false }),
+    });
   },
 
   // --- Bulk insert (used by migration) ---
   async bulkInsertTasks(rows) {
-    if (this.mode !== 'supabase') return;
+    if (this.mode !== 'api') return;
     if (!rows.length) return;
-    const { error } = await sb.from('tasks').insert(rows);
-    if (error) throw error;
+    await this._fetch('/api/tasks', { method: 'POST', body: JSON.stringify(rows) });
   },
   async bulkInsertCategories(rows) {
-    if (this.mode !== 'supabase') return;
+    if (this.mode !== 'api') return;
     if (!rows.length) return;
-    const { error } = await sb.from('categories').insert(rows);
-    if (error) throw error;
+    await this._fetch('/api/categories', { method: 'POST', body: JSON.stringify(rows) });
   },
 
   // --- Device preferences (always localStorage) ---
@@ -716,12 +720,15 @@ async function loadAllData() {
   } catch (e) {
     console.error('loadEverything failed:', e);
     syncErrorMessage = 'Ошибка синхронизации';
-    if (Storage.mode === 'supabase') {
-      // Fall back to local mode so app remains usable
-      Storage.mode = 'local';
-      Storage.userId = null;
+    if (Storage.mode === 'api') {
+      // Fall back to local mode so app remains usable.
+      if (e && e.unauthorized) {
+        localStorage.removeItem(LS_KEYS.token);
+        localStorage.removeItem(LS_KEYS.authUser);
+      }
+      Storage.mode  = 'local';
+      Storage.token = null;
       currentUser = null;
-      localStorage.removeItem(LS_KEYS.authUser);
       state = await Storage.loadEverything();
     } else {
       state = { tasks: [], checked: {}, categories: null, deletedDefaults: {}, defaultOverrides: {} };
@@ -865,7 +872,7 @@ function getColor(colorId) { return COLOR_PALETTE.find(c => c.id === colorId) ||
 function catColor(tag)     { return getColor((categories[tag] || {}).colorId || 'blue'); }
 
 function getAllEffectiveTasks() {
-  if (Storage.mode === 'supabase') {
+  if (Storage.mode === 'api') {
     return customTasks.map(t => ({ ...t, custom: true }));
   }
   const fromDefaults = DEFAULT_TASKS
@@ -897,7 +904,7 @@ function isArchivable(t) {
 }
 
 function generateTaskId() {
-  if (Storage.mode === 'supabase') {
+  if (Storage.mode === 'api') {
     return (window.crypto && crypto.randomUUID)
       ? crypto.randomUUID()
       : ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
@@ -1013,7 +1020,7 @@ async function deleteTask(id) {
   editingTaskId = null;
   render();
   try {
-    if (Storage.mode === 'supabase') {
+    if (Storage.mode === 'api') {
       if (customIdx >= 0) await Storage.deleteTaskById(id);
     } else {
       if (wasDefault) {
@@ -1215,13 +1222,11 @@ async function toggleDisplayMode() {
 // ============================================================
 async function resetProgress() {
   if (!confirm('Сбросить весь прогресс? Задачи останутся.')) return;
-  // Mark all current effective tasks as not-done
-  const allIds = getAllEffectiveTasks().map(t => t.id);
   checked = {};
   render();
   try {
-    if (Storage.mode === 'supabase') {
-      await sb.from('tasks').update({ done: false }).eq('user_id', Storage.userId);
+    if (Storage.mode === 'api') {
+      await Storage.resetProgressRemote();
     } else {
       writeJSON(LS_KEYS.checked, checked);
     }
@@ -1237,11 +1242,11 @@ async function resetAll() {
   editingTaskId = null; categoryEditMode = false; editingCategoryKey = null;
   render();
   try {
-    if (Storage.mode === 'supabase') {
+    if (Storage.mode === 'api') {
       await Storage.resetAllRemote();
-      // Re-seed default categories in supabase
+      // Re-seed default categories (server derives user_id from JWT)
       const catRows = Object.entries(categories).map(([key, v]) => ({
-        user_id: Storage.userId, key, label: v.label, color_id: v.colorId,
+        key, label: v.label, color_id: v.colorId,
       }));
       await Storage.bulkInsertCategories(catRows);
     } else {
@@ -1284,12 +1289,6 @@ function mountTelegramWidget() {
   const container = document.getElementById('tg-widget-container');
   if (!container) return;
   container.innerHTML = '';
-  if (!sb) {
-    container.innerHTML = `<div style="color:var(--urgent);font-family:var(--mono);font-size:0.72rem;text-align:center">
-      Supabase SDK не загружен. Проверьте подключение к интернету.
-    </div>`;
-    return;
-  }
   if (TELEGRAM_BOT_USERNAME === 'YOUR_BOT_USERNAME') {
     container.innerHTML = `<div style="color:var(--urgent);font-family:var(--mono);font-size:0.72rem;text-align:center">
       Сначала укажите имя бота в TELEGRAM_BOT_USERNAME (в коде).
@@ -1308,70 +1307,103 @@ function mountTelegramWidget() {
   if (btn) btn.style.display = 'none';
 }
 
-// Called by Telegram widget on successful auth
+// Called by the Telegram Login Widget. Must be reachable from the
+// widget's inline handler (data-onauth="onTelegramAuth(user)"), so we
+// also expose it explicitly on `window` below — function declarations
+// inside an inline <script> are normally global, but assigning to
+// window makes the binding robust against bundling / module scoping
+// and gives us a clear "yes, it's there" check from devtools.
 async function onTelegramAuth(user) {
-  // user = { id, first_name, last_name, username, photo_url, auth_date, hash }
-  // SECURITY NOTE: in production verify `hash` server-side. Without a
-  // server we trust the widget's client-side data; this is fine for a
-  // personal tracker but not for sensitive multi-user data.
-  closeLoginModal();
-  if (!sb) {
-    alert('Supabase SDK не загружен. Проверьте подключение к интернету и обновите страницу.');
-    return;
-  }
+  console.log('onTelegramAuth called', user);
   try {
-    await sb.from('users').upsert({
-      id: user.id,
-      username: user.username || null,
-      first_name: user.first_name || null,
-    });
-  } catch (e) {
-    console.error('Failed to upsert user', e);
-    alert('Не удалось сохранить пользователя в Supabase: ' + (e.message || e));
-    return;
-  }
+    // user = { id, first_name, last_name, username, photo_url, auth_date, hash }
+    closeLoginModal();
 
-  // Snapshot local data before mode switch
-  const localTasksLs      = readJSON(LS_KEYS.tasks, []);
-  const localCheckedLs    = readJSON(LS_KEYS.checked, {});
-  const localCatsLs       = readJSON(LS_KEYS.cats, null);
-  const localDeletedLs    = readJSON(LS_KEYS.deleted, {});
-  const localOverridesLs  = readJSON(LS_KEYS.overrides, {});
-  const hasLocalData =
-    (localTasksLs && localTasksLs.length > 0) ||
-    (localCatsLs && Object.keys(localCatsLs || {}).length > 0) ||
-    Object.keys(localCheckedLs || {}).length > 0;
+    let token, serverUser;
+    try {
+      console.log('Sending to /api/auth...');
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user),
+      });
+      console.log('/api/auth response status:', res.status);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.error('/api/auth returned non-OK:', res.status, err);
+        alert('Не удалось войти: ' + (err.error || ('HTTP ' + res.status)));
+        return;
+      }
+      const data = await res.json();
+      console.log('/api/auth response body:', data);
+      token      = data.token;
+      serverUser = data.user || {
+        id: user.id,
+        first_name: user.first_name || null,
+        username:   user.username   || null,
+        photo_url:  user.photo_url  || null,
+      };
+      if (!token) {
+        alert('Сервер не вернул токен авторизации.');
+        return;
+      }
+    } catch (e) {
+      console.error('Auth request failed', e);
+      alert('Ошибка авторизации: ' + (e.message || e));
+      return;
+    }
 
-  Storage.mode   = 'supabase';
-  Storage.userId = user.id;
-  currentUser    = user;
-  localStorage.setItem(LS_KEYS.authUser, JSON.stringify(user));
+    // Snapshot local data before mode switch
+    const localTasksLs      = readJSON(LS_KEYS.tasks, []);
+    const localCheckedLs    = readJSON(LS_KEYS.checked, {});
+    const localCatsLs       = readJSON(LS_KEYS.cats, null);
+    const localDeletedLs    = readJSON(LS_KEYS.deleted, {});
+    const localOverridesLs  = readJSON(LS_KEYS.overrides, {});
+    const hasLocalData =
+      (localTasksLs && localTasksLs.length > 0) ||
+      (localCatsLs && Object.keys(localCatsLs || {}).length > 0) ||
+      Object.keys(localCheckedLs || {}).length > 0;
 
-  if (hasLocalData) {
-    const doMigrate = confirm('Перенести задачи в облако?');
-    if (doMigrate) {
-      try {
-        await migrateLocalToSupabase({
-          localTasks: localTasksLs,
-          localChecked: localCheckedLs,
-          localCats: localCatsLs,
-          localDeleted: localDeletedLs,
-          localOverrides: localOverridesLs,
-        });
-      } catch (e) {
-        console.error('Migration failed', e);
-        alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
+    Storage.mode  = 'api';
+    Storage.token = token;
+    currentUser   = serverUser;
+    localStorage.setItem(LS_KEYS.token, token);
+    localStorage.setItem(LS_KEYS.authUser, JSON.stringify(serverUser));
+
+    if (hasLocalData) {
+      const doMigrate = confirm('Перенести задачи в облако?');
+      if (doMigrate) {
+        try {
+          await migrateLocalToApi({
+            localTasks: localTasksLs,
+            localChecked: localCheckedLs,
+            localCats: localCatsLs,
+            localDeleted: localDeletedLs,
+            localOverrides: localOverridesLs,
+          });
+        } catch (e) {
+          console.error('Migration failed', e);
+          alert('Миграция не удалась: ' + (e.message || e) + '\nОставляем локальные данные на месте.');
+        }
       }
     }
+
+    try { await loadAllData(); }
+    catch (e) { console.error('Initial load after auth failed:', e); }
+    render();
+    renderAuthSection();
+  } catch (outerErr) {
+    // Catch-all so the widget's caller never sees a swallowed rejection.
+    console.error('onTelegramAuth fatal error:', outerErr);
+    alert('Ошибка авторизации: ' + (outerErr && outerErr.message ? outerErr.message : outerErr));
   }
-
-  await loadAllData();
-  render();
-  renderAuthSection();
 }
+// Expose globally so the inline Telegram widget callback can find us
+// regardless of any future scoping changes (modules, IIFE wrappers, etc).
+window.onTelegramAuth = onTelegramAuth;
 
-async function migrateLocalToSupabase(snap) {
-  // Build full task list from local default + custom + overrides + deletions
+async function migrateLocalToApi(snap) {
+  // Server derives user_id from the JWT and generates UUIDs.
   const tasksToInsert = [];
   DEFAULT_TASKS
     .filter(t => !snap.localDeleted[t.id])
@@ -1379,8 +1411,6 @@ async function migrateLocalToSupabase(snap) {
       const o = snap.localOverrides[t.id] || {};
       const deadline = o.deadline ?? t.deadline;
       tasksToInsert.push({
-        id: crypto.randomUUID(),
-        user_id: Storage.userId,
         text: o.text ?? t.text,
         tag:  o.tag  ?? t.tag,
         deadline: deadline || null,
@@ -1388,21 +1418,17 @@ async function migrateLocalToSupabase(snap) {
         month: monthOf(deadline),
         urgent: !!(o.manualUrgent ?? t.manualUrgent ?? false),
         done:   !!snap.localChecked[t.id],
-        updated_at: new Date().toISOString(),
       });
     });
   (snap.localTasks || []).forEach(t => {
     const deadline = t.deadline || '—';
     tasksToInsert.push({
-      id: crypto.randomUUID(),
-      user_id: Storage.userId,
       text: t.text, tag: t.tag,
       deadline: deadline || null,
       deadline_date: isoFromRussian(deadline) || null,
       month: monthOf(deadline),
       urgent: !!(t.manualUrgent ?? t.urgent ?? false),
       done:   !!snap.localChecked[t.id],
-      updated_at: new Date().toISOString(),
     });
   });
 
@@ -1410,8 +1436,7 @@ async function migrateLocalToSupabase(snap) {
     ? snap.localCats
     : DEFAULT_CATEGORIES;
   const catsToInsert = Object.entries(catsSource).map(([key, v]) => ({
-    user_id: Storage.userId, key,
-    label: v.label, color_id: v.colorId,
+    key, label: v.label, color_id: v.colorId,
   }));
 
   await Storage.bulkInsertCategories(catsToInsert);
@@ -1426,10 +1451,11 @@ async function migrateLocalToSupabase(snap) {
 }
 
 async function logout() {
-  Storage.mode = 'local';
-  Storage.userId = null;
+  Storage.mode  = 'local';
+  Storage.token = null;
   currentUser = null;
   localStorage.removeItem(LS_KEYS.authUser);
+  localStorage.removeItem(LS_KEYS.token);
   filter = 'all';
   editingTaskId = null;
   categoryEditMode = false;
@@ -1476,7 +1502,7 @@ function populateAddTagSelect() {
 
 function renderAuthSection() {
   const el = document.getElementById('auth-section');
-  if (Storage.mode === 'supabase' && currentUser) {
+  if (Storage.mode === 'api' && currentUser) {
     const initial = (currentUser.first_name || '?').trim().charAt(0).toUpperCase();
     const avatar = currentUser.photo_url
       ? `<img class="auth-avatar" src="${escapeAttr(currentUser.photo_url)}" alt="">`
@@ -1713,16 +1739,17 @@ document.addEventListener('click', (e) => {
 // INIT — restore auth state from localStorage, then load data
 // ============================================================
 async function init() {
-  // Only honor stored auth if the SDK is actually available;
-  // otherwise stay in local mode so the app remains usable.
-  const stored = localStorage.getItem(LS_KEYS.authUser);
-  if (stored && sb) {
+  // Restore saved auth (token + user). If either is missing or the token
+  // turns out to be invalid, fall back to local/guest mode.
+  const storedToken = localStorage.getItem(LS_KEYS.token);
+  const storedUser  = localStorage.getItem(LS_KEYS.authUser);
+  if (storedToken && storedUser) {
     try {
-      const u = JSON.parse(stored);
+      const u = JSON.parse(storedUser);
       if (u && u.id) {
-        currentUser    = u;
-        Storage.mode   = 'supabase';
-        Storage.userId = u.id;
+        currentUser   = u;
+        Storage.mode  = 'api';
+        Storage.token = storedToken;
       }
     } catch (e) { /* ignore */ }
   }
@@ -1730,8 +1757,12 @@ async function init() {
     await loadAllData();
   } catch (e) {
     console.error('loadAllData failed (forcing local mode):', e);
-    Storage.mode = 'local';
-    Storage.userId = null;
+    if (e && e.unauthorized) {
+      localStorage.removeItem(LS_KEYS.token);
+      localStorage.removeItem(LS_KEYS.authUser);
+    }
+    Storage.mode  = 'local';
+    Storage.token = null;
     currentUser = null;
     try { await loadAllData(); } catch (e2) { console.error('local load also failed:', e2); }
   }
