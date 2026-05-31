@@ -37,6 +37,7 @@ function buildTaskRow(userId, b) {
     month:         b.month         != null ? b.month         : null,
     urgent:        !!b.urgent,
     done:          !!b.done,
+    archived:      !!b.archived,
     updated_at:    new Date().toISOString(),
   };
   if (b.id) row.id = b.id;
@@ -85,6 +86,7 @@ module.exports = async (req, res) => {
       if ('month'         in body) patch.month         = body.month;
       if ('urgent'        in body) patch.urgent        = !!body.urgent;
       if ('done'          in body) patch.done          = !!body.done;
+      if ('archived'      in body) patch.archived      = !!body.archived;
 
       if (id) {
         const { data, error } = await supabase.from('tasks')

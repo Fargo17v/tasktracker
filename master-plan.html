@@ -268,8 +268,11 @@ header {
 }
 .deadline.overdue-label {
   color: var(--urgent); font-weight: 500;
-  text-transform: uppercase; letter-spacing: 0.06em;
 }
+/* Overdue tasks stay in the main list with a subtle red left border. */
+.task.overdue { border-left: 3px solid var(--urgent); }
+/* If a task is both urgent and overdue, the urgent border already covers it,
+   but the deadline text colour is overridden by .overdue-label above. */
 .task-edit-trigger {
   position: absolute; top: 50%; right: 10px;
   transform: translateY(-50%);
@@ -288,8 +291,8 @@ header {
 }
 .archive-header {
   font-family: var(--mono); font-size: 0.7rem; font-weight: 500;
-  color: var(--urgent); text-transform: uppercase; letter-spacing: 0.1em;
-  padding: 0 4px 8px; border-bottom: 1px solid rgba(240,68,56,0.2);
+  color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 0 4px 8px; border-bottom: 1px solid var(--border);
   margin-bottom: 8px; display: flex; justify-content: space-between;
 }
 .task.archived { opacity: 0.5; transition: opacity 0.15s; }
@@ -323,8 +326,8 @@ select.edit-field { cursor: pointer; }
   cursor: pointer; user-select: none;
 }
 .edit-urgent input { width: 16px; height: 16px; accent-color: var(--urgent); cursor: pointer; }
-.edit-actions { display: flex; gap: 8px; margin-top: 4px; }
-.btn-edit-save, .btn-edit-delete {
+.edit-actions { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+.btn-edit-save, .btn-edit-delete, .btn-edit-archive, .btn-edit-unarchive {
   padding: 8px 18px; border-radius: 6px; font-family: var(--mono);
   font-size: 0.75rem; cursor: pointer; transition: all 0.15s; border: none;
   font-weight: 500;
@@ -333,6 +336,12 @@ select.edit-field { cursor: pointer; }
 .btn-edit-save:hover { opacity: 0.85; }
 .btn-edit-delete { background: transparent; color: var(--urgent); border: 1px solid rgba(240,68,56,0.35); }
 .btn-edit-delete:hover { background: var(--urgent-bg); border-color: var(--urgent); }
+.btn-edit-archive, .btn-edit-unarchive {
+  background: transparent; color: var(--text-dim); border: 1px solid var(--border);
+}
+.btn-edit-archive:hover, .btn-edit-unarchive:hover {
+  color: var(--text); border-color: var(--text-faint);
+}
 
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);
@@ -372,15 +381,6 @@ select.edit-field { cursor: pointer; }
 .modal-btns .cancel:hover { color: var(--text); }
 .modal-btns .confirm { background: var(--accent); color: #fff; }
 .modal-btns .confirm:hover { opacity: 0.85; }
-
-.bottom-actions { display: flex; gap: 10px; justify-content: center; margin-top: 2rem; flex-wrap: wrap; }
-.action-btn {
-  padding: 8px 20px; font-family: var(--mono); font-size: 0.72rem;
-  background: transparent; border: 1px solid var(--border);
-  color: var(--text-faint); border-radius: 20px; cursor: pointer; transition: all 0.2s;
-}
-.action-btn:hover { border-color: var(--text-dim); color: var(--text-dim); }
-.action-btn.danger:hover { border-color: var(--urgent); color: var(--urgent); }
 
 .empty-state {
   text-align: center; padding: 3rem 0; color: var(--text-faint);
@@ -425,10 +425,6 @@ select.edit-field { cursor: pointer; }
   </div>
   <div id="tasks"></div>
   <div id="modal-root"></div>
-  <div class="bottom-actions">
-    <button class="action-btn danger" onclick="resetProgress()">Сбросить прогресс</button>
-    <button class="action-btn danger" onclick="resetAll()">Сбросить всё</button>
-  </div>
 </div>
 
 <script>
@@ -457,41 +453,8 @@ const COLOR_PALETTE = [
   { id:'rose',   hex:'#fb7185', bg:'rgba(251,113,133,0.1)', border:'rgba(251,113,133,0.25)' },
 ];
 
-const DEFAULT_CATEGORIES = {
-  visa:    { label:'Виза',     colorId:'blue' },
-  exam:    { label:'Экзамены', colorId:'green' },
-  diploma: { label:'Диплом',   colorId:'amber' },
-  uni:     { label:'Германия', colorId:'purple' },
-};
-
-const DEFAULT_TASKS = [
-  { id:'1',  text:'Снять копии со всех документов на визу', tag:'visa', deadline:'31 мая', manualUrgent:true },
-  { id:'2',  text:'Найти контору/юриста для помощи с визой', tag:'visa', deadline:'2 июня', manualUrgent:true },
-  { id:'3',  text:'Узнать статус Verpflichtungserklärung (инфо 2 июня)', tag:'visa', deadline:'2 июня', manualUrgent:true },
-  { id:'4',  text:'Собрать ВКР из трёх отчётов по практике', tag:'diploma', deadline:'6 июня', manualUrgent:true },
-  { id:'5',  text:'Скачать учебники для экзаменов (ЭБС Юрайт / АТиСО)', tag:'exam', deadline:'5 июня' },
-  { id:'6',  text:'Заполнить анкету на визу C (Almaviva) + записаться на приём', tag:'visa', deadline:'10 июня' },
-  { id:'7',  text:'Оформить страховку (AXA / Europ Assistance)', tag:'visa', deadline:'10 июня' },
-  { id:'8',  text:'Сделать 2 фото 35×45 на белом фоне', tag:'visa', deadline:'10 июня' },
-  { id:'9',  text:'Запросить у папы выписку из грузинского банка (3 мес.)', tag:'visa', deadline:'10 июня' },
-  { id:'10', text:'Подготовить блок: Корпоративные финансы', tag:'exam', deadline:'10 июня' },
-  { id:'11', text:'Подать документы на поступление в СевГУ', tag:'exam', deadline:'20 июня' },
-  { id:'12', text:'Подготовить блок: Финансовая диагностика', tag:'exam', deadline:'20 июня' },
-  { id:'13', text:'Защита диплома бакалавра', tag:'diploma', deadline:'26 июня' },
-  { id:'14', text:'Подготовить блок: Бюджетная система РФ', tag:'exam', deadline:'30 июня' },
-  { id:'15', text:'Поехать в Москву — подать документы в Almaviva + биометрия', tag:'visa', deadline:'конец июня' },
-  { id:'16', text:'Подготовить блок: Налоговая система', tag:'exam', deadline:'10 июля' },
-  { id:'17', text:'Подготовить блок: Банковское дело', tag:'exam', deadline:'20 июля' },
-  { id:'18', text:'Подготовить блок: Инвестирование', tag:'exam', deadline:'31 июля' },
-  { id:'19', text:'Вступительные экзамены в СевГУ', tag:'exam', deadline:'июль–август' },
-  { id:'20', text:'Повторение: прогон 6 дисциплин + пробные тесты', tag:'exam', deadline:'1–10 августа' },
-  { id:'21', text:'Получить визу, забрать паспорт', tag:'visa', deadline:'июль–август' },
-  { id:'22', text:'Поездка в Германию (транзит через Турцию/Сербию → Италия → Хайльбронн)', tag:'visa', deadline:'лето' },
-  { id:'23', text:'Поступление на «Финансы и Кредит» в СевГУ', tag:'exam', deadline:'сентябрь' },
-  { id:'24', text:'Начать интенсивную подготовку к IELTS', tag:'uni', deadline:'сентябрь' },
-  { id:'25', text:'Начать собирать документы для немецких вузов', tag:'uni', deadline:'октябрь–ноябрь' },
-  { id:'26', text:'Сдать IELTS (цель 5.5+)', tag:'uni', deadline:'декабрь' },
-];
+// New users start with a clean slate. No seed tasks, no seed categories —
+// the UI handles empty `customTasks` / `categories` gracefully.
 
 const RU_MONTH_NAMES    = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
 const RU_MONTH_GENITIVE = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
@@ -499,10 +462,9 @@ const NO_DATE_LABEL     = 'Без даты';
 const NEW_CAT_SENTINEL  = '__new_cat__';
 
 const LS_KEYS = {
-  checked: 'mp_checked', tasks: 'mp_tasks', deleted: 'mp_deleted',
-  overrides: 'mp_edits', cats: 'mp_categories',
+  checked: 'mp_checked', tasks: 'mp_tasks', cats: 'mp_categories',
   display: 'mp_display_mode', showArchive: 'mp_show_archive',
-  authUser: 'mp_auth_user',
+  authUser: 'mp_auth_user', token: 'mp_token',
 };
 
 // ============================================================
@@ -563,23 +525,20 @@ const Storage = {
       const tasks = (taskRows || []).map(r => ({
         id: r.id, text: r.text, tag: r.tag,
         deadline: r.deadline || '—',
-        manualUrgent: !!r.urgent, custom: true,
+        manualUrgent: !!r.urgent,
+        archived: !!r.archived,
+        custom: true,
       }));
       const checked = {};
       (taskRows || []).forEach(r => { if (r.done) checked[r.id] = true; });
       const categories = {};
       (catRows || []).forEach(r => { categories[r.key] = { label: r.label, colorId: r.color_id }; });
-      return {
-        tasks, checked, categories,
-        deletedDefaults: {}, defaultOverrides: {},
-      };
+      return { tasks, checked, categories };
     }
     return {
       tasks: readJSON(LS_KEYS.tasks, []),
       checked: readJSON(LS_KEYS.checked, {}),
       categories: readJSON(LS_KEYS.cats, null),
-      deletedDefaults: readJSON(LS_KEYS.deleted, {}),
-      defaultOverrides: readJSON(LS_KEYS.overrides, {}),
     };
   },
 
@@ -594,6 +553,7 @@ const Storage = {
         month: monthOf(task.deadline),
         urgent: !!task.manualUrgent,
         done: !!done,
+        archived: !!task.archived,
       };
       await this._fetch('/api/tasks', {
         method: 'POST',
@@ -609,9 +569,7 @@ const Storage = {
       await this._fetch('/api/tasks?id=' + encodeURIComponent(id), { method: 'DELETE' });
     } else {
       writeJSON(LS_KEYS.tasks, customTasks);
-      writeJSON(LS_KEYS.deleted, deletedDefaults);
       writeJSON(LS_KEYS.checked, checked);
-      writeJSON(LS_KEYS.overrides, defaultOverrides);
     }
   },
   async setTaskDone(id, done) {
@@ -622,6 +580,16 @@ const Storage = {
       });
     } else {
       writeJSON(LS_KEYS.checked, checked);
+    }
+  },
+  async setTaskArchived(id, archived) {
+    if (this.mode === 'api') {
+      await this._fetch('/api/tasks?id=' + encodeURIComponent(id), {
+        method: 'PUT',
+        body: JSON.stringify({ archived: !!archived }),
+      });
+    } else {
+      writeJSON(LS_KEYS.tasks, customTasks);
     }
   },
 
@@ -642,33 +610,8 @@ const Storage = {
     } else {
       writeJSON(LS_KEYS.cats, categories);
       writeJSON(LS_KEYS.tasks, customTasks);
-      writeJSON(LS_KEYS.deleted, deletedDefaults);
-      writeJSON(LS_KEYS.overrides, defaultOverrides);
       writeJSON(LS_KEYS.checked, checked);
     }
-  },
-
-  // --- Defaults-overrides (local-only concept; no-op in api mode) ---
-  async saveDefaultOverrides() {
-    if (this.mode === 'api') return;
-    writeJSON(LS_KEYS.overrides, defaultOverrides);
-  },
-  async saveDeletedDefaults() {
-    if (this.mode === 'api') return;
-    writeJSON(LS_KEYS.deleted, deletedDefaults);
-  },
-
-  // --- Reset operations (api delegates to server endpoints) ---
-  async resetAllRemote() {
-    if (this.mode !== 'api') return;
-    await this._fetch('/api/categories', { method: 'DELETE' });
-  },
-  async resetProgressRemote() {
-    if (this.mode !== 'api') return;
-    await this._fetch('/api/tasks', {
-      method: 'PUT',
-      body: JSON.stringify({ done: false }),
-    });
   },
 
   // --- Bulk insert (used by migration) ---
@@ -695,8 +638,6 @@ const Storage = {
 // ============================================================
 let checked = {};
 let customTasks = [];
-let deletedDefaults = {};
-let defaultOverrides = {};
 let categories = {};
 let displayMode = 'date';
 let showArchive = false;
@@ -704,10 +645,9 @@ let filter = 'all';
 let editingTaskId = null;
 let categoryEditMode = false;
 let editingCategoryKey = null;
-let nextId = 1000;
 let catModalSuccessCb = null;
 let currentUser = null;     // Telegram user object when authenticated
-let syncErrorMessage = '';  // shows in header if Supabase calls fail
+let syncErrorMessage = '';  // shows in header if sync to /api/* fails
 
 // ============================================================
 // LOAD & SAVE (via Storage)
@@ -721,7 +661,6 @@ async function loadAllData() {
     console.error('loadEverything failed:', e);
     syncErrorMessage = 'Ошибка синхронизации';
     if (Storage.mode === 'api') {
-      // Fall back to local mode so app remains usable.
       if (e && e.unauthorized) {
         localStorage.removeItem(LS_KEYS.token);
         localStorage.removeItem(LS_KEYS.authUser);
@@ -731,37 +670,27 @@ async function loadAllData() {
       currentUser = null;
       state = await Storage.loadEverything();
     } else {
-      state = { tasks: [], checked: {}, categories: null, deletedDefaults: {}, defaultOverrides: {} };
+      state = { tasks: [], checked: {}, categories: null };
     }
   }
-  customTasks      = state.tasks || [];
-  checked          = state.checked || {};
-  categories       = state.categories;
-  deletedDefaults  = state.deletedDefaults || {};
-  defaultOverrides = state.defaultOverrides || {};
+  customTasks = state.tasks || [];
+  checked     = state.checked || {};
+  categories  = state.categories && typeof state.categories === 'object'
+    ? state.categories
+    : {};
 
-  // Migrations (local-only fields)
-  for (const [id, val] of Object.entries(defaultOverrides)) {
-    if (typeof val === 'string') defaultOverrides[id] = { text: val };
-  }
+  // Migrate legacy fields on stored custom tasks
   customTasks.forEach(t => {
     t.id = String(t.id);
     if (t.urgent !== undefined && t.manualUrgent === undefined) t.manualUrgent = t.urgent;
     delete t.urgent;
     delete t.month;
+    if (typeof t.archived !== 'boolean') t.archived = false;
   });
-  if (!categories || !Object.keys(categories).length) {
-    categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
-  }
+
   displayMode = await Storage.getDisplayMode();
   showArchive = await Storage.getShowArchive();
   if (displayMode !== 'date' && displayMode !== 'countdown') displayMode = 'date';
-
-  // nextId for local integer-ID generation
-  const numericIds = customTasks
-    .map(t => parseInt(t.id, 10))
-    .filter(n => !isNaN(n));
-  nextId = numericIds.length ? Math.max(...numericIds, 999) + 1 : 1000;
 }
 
 // ============================================================
@@ -872,44 +801,34 @@ function getColor(colorId) { return COLOR_PALETTE.find(c => c.id === colorId) ||
 function catColor(tag)     { return getColor((categories[tag] || {}).colorId || 'blue'); }
 
 function getAllEffectiveTasks() {
-  if (Storage.mode === 'api') {
-    return customTasks.map(t => ({ ...t, custom: true }));
-  }
-  const fromDefaults = DEFAULT_TASKS
-    .filter(t => !deletedDefaults[t.id])
-    .map(t => {
-      const o = defaultOverrides[t.id] || {};
-      return {
-        id: t.id,
-        text:         o.text         ?? t.text,
-        deadline:     o.deadline     ?? t.deadline,
-        tag:          o.tag          ?? t.tag,
-        manualUrgent: o.manualUrgent ?? t.manualUrgent ?? false,
-        custom: false,
-      };
-    });
-  const fromCustom = customTasks.map(t => ({
-    id: t.id, text: t.text, deadline: t.deadline,
-    tag: t.tag, manualUrgent: t.manualUrgent ?? false,
+  return customTasks.map(t => ({
+    id: t.id,
+    text: t.text,
+    deadline: t.deadline,
+    tag: t.tag,
+    manualUrgent: !!t.manualUrgent,
+    archived: !!t.archived,
     custom: true,
   }));
-  return [...fromDefaults, ...fromCustom];
 }
 
-function isArchivable(t) {
+// Archived flag is now a per-task property set manually by the user.
+function isArchived(t) { return !!t.archived; }
+
+// Overdue is purely visual now — overdue tasks stay in the active list
+// but get a red deadline + subtle red left border.
+function isOverdue(t) {
   if (checked[t.id]) return false;
+  if (t.archived) return false;
   const d = parseRussianDate(t.deadline);
   if (!d) return false;
   return daysUntil(d) < 0;
 }
 
 function generateTaskId() {
-  if (Storage.mode === 'api') {
-    return (window.crypto && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
-  }
-  return String(nextId++);
+  return (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : ('t_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10));
 }
 
 // ============================================================
@@ -943,7 +862,7 @@ async function addTask() {
   const deadline = russianFromIso(nativeDate.value) || '—';
   const newTask = {
     id: generateTaskId(), text, tag: tagVal, deadline,
-    manualUrgent: false, custom: true,
+    manualUrgent: false, archived: false, custom: true,
   };
   customTasks.push(newTask);
   // Reset form
@@ -980,7 +899,11 @@ async function saveTaskEdit(id) {
     ? (russianFromIso(nativeDate.value) || '—')
     : (original || '—');
   let tag = tagEl.value;
-  if (!tag || tag === NEW_CAT_SENTINEL) tag = Object.keys(categories)[0] || 'visa';
+  if (!tag || tag === NEW_CAT_SENTINEL) {
+    const firstKey = Object.keys(categories)[0];
+    if (!firstKey) { alert('Сначала создайте категорию'); return; }
+    tag = firstKey;
+  }
   const manualUrgent = urgentEl.checked;
 
   const customIdx = customTasks.findIndex(t => t.id === id);
@@ -991,13 +914,29 @@ async function saveTaskEdit(id) {
     editingTaskId = null; render();
     try { await Storage.upsertTask(customTasks[customIdx], !!checked[id]); markSync(true); }
     catch (e) { console.error(e); markSync(false); }
-  } else if (Storage.mode === 'local' && DEFAULT_TASKS.some(t => t.id === id)) {
-    defaultOverrides[id] = { text, deadline, tag, manualUrgent };
-    editingTaskId = null; render();
-    await Storage.saveDefaultOverrides();
   } else {
     editingTaskId = null; render();
   }
+}
+
+async function archiveTask(id) {
+  const idx = customTasks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  customTasks[idx].archived = true;
+  editingTaskId = null;
+  render();
+  try { await Storage.setTaskArchived(id, true); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
+}
+
+async function unarchiveTask(id) {
+  const idx = customTasks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  customTasks[idx].archived = false;
+  editingTaskId = null;
+  render();
+  try { await Storage.setTaskArchived(id, false); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
 }
 
 function confirmDeleteTask(id) {
@@ -1009,28 +948,12 @@ function confirmDeleteTask(id) {
 
 async function deleteTask(id) {
   const customIdx = customTasks.findIndex(t => t.id === id);
-  const wasDefault = customIdx < 0 && DEFAULT_TASKS.some(t => t.id === id);
-  if (customIdx >= 0) {
-    customTasks.splice(customIdx, 1);
-  } else if (wasDefault) {
-    deletedDefaults[id] = true;
-    delete defaultOverrides[id];
-  }
+  if (customIdx >= 0) customTasks.splice(customIdx, 1);
   delete checked[id];
   editingTaskId = null;
   render();
-  try {
-    if (Storage.mode === 'api') {
-      if (customIdx >= 0) await Storage.deleteTaskById(id);
-    } else {
-      if (wasDefault) {
-        await Storage.saveDeletedDefaults();
-        await Storage.saveDefaultOverrides();
-      }
-      await Storage.deleteTaskById(id);
-    }
-    markSync(true);
-  } catch (e) { console.error(e); markSync(false); }
+  try { await Storage.deleteTaskById(id); markSync(true); }
+  catch (e) { console.error(e); markSync(false); }
 }
 
 // ============================================================
@@ -1071,15 +994,6 @@ function confirmCatDelete(key) {
 }
 
 async function deleteCategory(key) {
-  // Local-mode default tasks
-  DEFAULT_TASKS.forEach(t => {
-    const effectiveTag = (defaultOverrides[t.id] && defaultOverrides[t.id].tag) || t.tag;
-    if (effectiveTag === key) {
-      deletedDefaults[t.id] = true;
-      delete defaultOverrides[t.id];
-      delete checked[t.id];
-    }
-  });
   customTasks = customTasks.filter(t => {
     if (t.tag === key) { delete checked[t.id]; return false; }
     return true;
@@ -1217,52 +1131,6 @@ async function toggleDisplayMode() {
   render();
 }
 
-// ============================================================
-// RESET / BULK
-// ============================================================
-async function resetProgress() {
-  if (!confirm('Сбросить весь прогресс? Задачи останутся.')) return;
-  checked = {};
-  render();
-  try {
-    if (Storage.mode === 'api') {
-      await Storage.resetProgressRemote();
-    } else {
-      writeJSON(LS_KEYS.checked, checked);
-    }
-    markSync(true);
-  } catch (e) { console.error(e); markSync(false); }
-}
-
-async function resetAll() {
-  if (!confirm('Сбросить ВСЁ? Задачи, прогресс, категории — всё вернётся к начальному состоянию.')) return;
-  checked = {}; customTasks = []; deletedDefaults = {}; defaultOverrides = {};
-  categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
-  displayMode = 'date'; showArchive = false; filter = 'all';
-  editingTaskId = null; categoryEditMode = false; editingCategoryKey = null;
-  render();
-  try {
-    if (Storage.mode === 'api') {
-      await Storage.resetAllRemote();
-      // Re-seed default categories (server derives user_id from JWT)
-      const catRows = Object.entries(categories).map(([key, v]) => ({
-        key, label: v.label, color_id: v.colorId,
-      }));
-      await Storage.bulkInsertCategories(catRows);
-    } else {
-      writeJSON(LS_KEYS.checked, checked);
-      writeJSON(LS_KEYS.tasks, customTasks);
-      writeJSON(LS_KEYS.deleted, deletedDefaults);
-      writeJSON(LS_KEYS.overrides, defaultOverrides);
-      writeJSON(LS_KEYS.cats, categories);
-    }
-    await Storage.saveDisplayMode(displayMode);
-    await Storage.saveShowArchive(showArchive);
-    markSync(true);
-  } catch (e) { console.error(e); markSync(false); }
-  await loadAllData();
-  render();
-}
 
 // ============================================================
 // AUTH — Telegram login + Supabase user sync
@@ -1354,15 +1222,12 @@ async function onTelegramAuth(user) {
     }
 
     // Snapshot local data before mode switch
-    const localTasksLs      = readJSON(LS_KEYS.tasks, []);
-    const localCheckedLs    = readJSON(LS_KEYS.checked, {});
-    const localCatsLs       = readJSON(LS_KEYS.cats, null);
-    const localDeletedLs    = readJSON(LS_KEYS.deleted, {});
-    const localOverridesLs  = readJSON(LS_KEYS.overrides, {});
+    const localTasksLs   = readJSON(LS_KEYS.tasks, []);
+    const localCheckedLs = readJSON(LS_KEYS.checked, {});
+    const localCatsLs    = readJSON(LS_KEYS.cats, null);
     const hasLocalData =
       (localTasksLs && localTasksLs.length > 0) ||
-      (localCatsLs && Object.keys(localCatsLs || {}).length > 0) ||
-      Object.keys(localCheckedLs || {}).length > 0;
+      (localCatsLs && Object.keys(localCatsLs || {}).length > 0);
 
     Storage.mode  = 'api';
     Storage.token = token;
@@ -1378,8 +1243,6 @@ async function onTelegramAuth(user) {
             localTasks: localTasksLs,
             localChecked: localCheckedLs,
             localCats: localCatsLs,
-            localDeleted: localDeletedLs,
-            localOverrides: localOverridesLs,
           });
         } catch (e) {
           console.error('Migration failed', e);
@@ -1404,49 +1267,29 @@ window.onTelegramAuth = onTelegramAuth;
 
 async function migrateLocalToApi(snap) {
   // Server derives user_id from the JWT and generates UUIDs.
-  const tasksToInsert = [];
-  DEFAULT_TASKS
-    .filter(t => !snap.localDeleted[t.id])
-    .forEach(t => {
-      const o = snap.localOverrides[t.id] || {};
-      const deadline = o.deadline ?? t.deadline;
-      tasksToInsert.push({
-        text: o.text ?? t.text,
-        tag:  o.tag  ?? t.tag,
-        deadline: deadline || null,
-        deadline_date: isoFromRussian(deadline) || null,
-        month: monthOf(deadline),
-        urgent: !!(o.manualUrgent ?? t.manualUrgent ?? false),
-        done:   !!snap.localChecked[t.id],
-      });
-    });
-  (snap.localTasks || []).forEach(t => {
+  const tasksToInsert = (snap.localTasks || []).map(t => {
     const deadline = t.deadline || '—';
-    tasksToInsert.push({
+    return {
       text: t.text, tag: t.tag,
       deadline: deadline || null,
       deadline_date: isoFromRussian(deadline) || null,
       month: monthOf(deadline),
       urgent: !!(t.manualUrgent ?? t.urgent ?? false),
       done:   !!snap.localChecked[t.id],
-    });
+      archived: !!t.archived,
+    };
   });
 
-  const catsSource = (snap.localCats && Object.keys(snap.localCats).length)
-    ? snap.localCats
-    : DEFAULT_CATEGORIES;
-  const catsToInsert = Object.entries(catsSource).map(([key, v]) => ({
+  const catsToInsert = Object.entries(snap.localCats || {}).map(([key, v]) => ({
     key, label: v.label, color_id: v.colorId,
   }));
 
-  await Storage.bulkInsertCategories(catsToInsert);
-  await Storage.bulkInsertTasks(tasksToInsert);
+  if (catsToInsert.length) await Storage.bulkInsertCategories(catsToInsert);
+  if (tasksToInsert.length) await Storage.bulkInsertTasks(tasksToInsert);
 
   // Clear localStorage data keys (keep device prefs like display mode)
   localStorage.removeItem(LS_KEYS.tasks);
   localStorage.removeItem(LS_KEYS.checked);
-  localStorage.removeItem(LS_KEYS.deleted);
-  localStorage.removeItem(LS_KEYS.overrides);
   localStorage.removeItem(LS_KEYS.cats);
 }
 
@@ -1521,7 +1364,7 @@ function renderAuthSection() {
 
 function renderToolbar() {
   const all = getAllEffectiveTasks();
-  const archiveCount = all.filter(t => isArchivable(t)).length;
+  const archiveCount = all.filter(t => isArchived(t)).length;
   const dmIcon  = displayMode === 'date' ? '📅' : '⏳';
   const dmLabel = displayMode === 'date' ? 'дата' : 'осталось дней';
   const dmNext  = displayMode === 'date' ? 'осталось дней' : 'дата';
@@ -1531,7 +1374,7 @@ function renderToolbar() {
     html += `<button class="toolbar-btn archive${showArchive ? ' active' : ''}"
       onclick="toggleArchive()"
       title="${showArchive ? 'Скрыть архив' : 'Показать архив'}">
-      <span>Архив</span><span>· ${archiveCount}</span>
+      <span>Архив (${archiveCount})</span>
     </button>`;
   }
   html += `<button class="toolbar-btn display" onclick="toggleDisplayMode()" title="Переключить на: ${dmNext}">
@@ -1597,18 +1440,22 @@ function renderFilters() {
 }
 
 function renderTaskCard(t, isArchivedDisplay) {
-  const isDone     = !!checked[t.id];
-  const isEditing  = editingTaskId === t.id;
-  const cat        = categories[t.tag];
-  const c          = cat ? getColor(cat.colorId) : COLOR_PALETTE[0];
-  const tagStyle   = `background:${c.bg};color:${c.hex};border:1px solid ${c.border}`;
-  const showUrgent = t._urgent && !isDone && !isArchivedDisplay;
+  const isDone      = !!checked[t.id];
+  const isEditing   = editingTaskId === t.id;
+  const cat         = categories[t.tag];
+  const c           = cat ? getColor(cat.colorId) : COLOR_PALETTE[0];
+  const tagStyle    = `background:${c.bg};color:${c.hex};border:1px solid ${c.border}`;
+  const showUrgent  = t._urgent && !isDone && !isArchivedDisplay;
+  const showOverdue = !isArchivedDisplay && isOverdue(t);
 
   if (isEditing) {
     const iso       = isoFromRussian(t.deadline);
     const hasReal   = !!t.deadline && t.deadline !== '—';
     const dispText  = iso ? russianFromIso(iso) : (hasReal ? t.deadline : 'Дедлайн');
     const dispEmpty = !iso && !hasReal;
+    const archiveBtn = t.archived
+      ? `<button class="btn-edit-unarchive" onclick="unarchiveTask('${escapeAttr(t.id)}')">Восстановить</button>`
+      : `<button class="btn-edit-archive" onclick="archiveTask('${escapeAttr(t.id)}')">В архив</button>`;
     return `<div class="task editing" data-id="${escapeAttr(t.id)}">
       <div class="task-edit-form" onclick="event.stopPropagation()">
         <input class="edit-field" id="te-text-${escapeAttr(t.id)}" type="text" value="${escapeAttr(t.text)}" placeholder="Задача"
@@ -1630,13 +1477,22 @@ function renderTaskCard(t, isArchivedDisplay) {
         </label>
         <div class="edit-actions">
           <button class="btn-edit-save" onclick="saveTaskEdit('${escapeAttr(t.id)}')">Сохранить</button>
+          ${archiveBtn}
           <button class="btn-edit-delete" onclick="confirmDeleteTask('${escapeAttr(t.id)}')">Удалить</button>
         </div>
       </div>
     </div>`;
   }
 
-  return `<div class="task${isDone ? ' done' : ''}${showUrgent ? ' urgent' : ''}${isArchivedDisplay ? ' archived' : ''}" onclick="toggle('${escapeAttr(t.id)}')">
+  const cls = [
+    'task',
+    isDone ? 'done' : '',
+    showUrgent ? 'urgent' : '',
+    showOverdue ? 'overdue' : '',
+    isArchivedDisplay ? 'archived' : '',
+  ].filter(Boolean).join(' ');
+
+  return `<div class="${cls}" onclick="toggle('${escapeAttr(t.id)}')">
     <div class="checkbox">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </div>
@@ -1645,9 +1501,7 @@ function renderTaskCard(t, isArchivedDisplay) {
       <div class="task-row">
         <span class="tag" style="${tagStyle}">${escapeHtml(cat ? cat.label : t.tag)}</span>
         ${showUrgent ? '<span class="tag tag-urgent">срочно</span>' : ''}
-        ${isArchivedDisplay
-          ? '<span class="deadline overdue-label">Просрочено</span>'
-          : `<span class="deadline">${escapeHtml(formatDeadline(t.deadline))}</span>`}
+        <span class="deadline${showOverdue ? ' overdue-label' : ''}">${escapeHtml(formatDeadline(t.deadline))}</span>
       </div>
     </div>
     <button class="task-edit-trigger" onclick="event.stopPropagation();startTaskEdit('${escapeAttr(t.id)}')" title="Редактировать">✎</button>
@@ -1674,15 +1528,12 @@ function renderTasks(scopedActive, scopedArchived) {
       html += '</div>';
     });
   } else {
-    const note = scopedArchived.length && !showArchive
-      ? 'Активных задач нет — все просрочены. Откройте архив.'
-      : 'Нет задач в этой категории';
-    html += `<div class="empty-state">${note}</div>`;
+    html += `<div class="empty-state">Нет задач в этой категории</div>`;
   }
   if (showArchive && scopedArchived.length) {
     const sorted = scopedArchived.slice().sort((a, b) => taskDateSortKey(b) - taskDateSortKey(a));
     html += `<div class="archive-section">
-      <div class="archive-header"><span>Архив · просрочено</span><span>${sorted.length}</span></div>`;
+      <div class="archive-header"><span>Архив</span><span>${sorted.length}</span></div>`;
     sorted.forEach(t => { html += renderTaskCard(t, true); });
     html += `</div>`;
   }
@@ -1698,8 +1549,8 @@ function render() {
     ...t,
     _urgent: t.manualUrgent || isAutoUrgent(t.deadline),
   }));
-  const archivable = all.filter(t => isArchivable(t));
-  const active     = all.filter(t => !isArchivable(t));
+  const archivable = all.filter(t => isArchived(t));
+  const active     = all.filter(t => !isArchived(t));
 
   const scopedActive   = filter === 'all' ? active     : active.filter(t => t.tag === filter);
   const scopedArchived = filter === 'all' ? archivable : archivable.filter(t => t.tag === filter);
@@ -1772,13 +1623,11 @@ async function init() {
 
 init().catch(e => {
   console.error('init() crashed:', e);
-  // Last-resort recovery: seed defaults and render, so the page is never blank.
+  // Last-resort recovery: render an empty UI so the page is never blank.
   try {
-    categories = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+    categories = {};
     customTasks = [];
     checked = {};
-    deletedDefaults = {};
-    defaultOverrides = {};
     render();
     renderAuthSection();
   } catch (e2) {
